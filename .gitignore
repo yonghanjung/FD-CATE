@@ -1,0 +1,44 @@
+cat > .gitignore << 'EOF'
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data & experiment outputs
+data/
+results/
+outputs/
+artifacts/
+logs/
+checkpoints/
+models/
+figures/
+plots/
+
+# Generated artifacts
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+
+# Packaging/build
+*.egg-info/
+dist/
+build/
+*.egg
+*.pkl
+EOF
