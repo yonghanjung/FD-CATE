@@ -29,7 +29,8 @@ warnings.filterwarnings(
 # ============================
 COLOR_NAIVE = "#E41A1C"  # strong red      → Naïve FD
 COLOR_FDDR  = "#377EB8"  # strong blue     → FD-DR
-COLOR_FDR   = "#4DAF4A"  # strong green    → FD-R3
+COLOR_FDR   = "#4DAF4A"  # strong green    → FD-R
+COLOR_FDR3  = "#FFBF00"  # vivid amber    → FD-R3
 
 # ============================
 # Utilities & constants
@@ -594,11 +595,13 @@ def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = 
         delta = noise_coeff
         tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,seed+10)
         tau_dr    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,seed+20)
-        tau_r     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,seed+40,g_solver="direct",swap_average=True)
+        tau_r     = tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed+30)
+        tau_r3     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,seed+40,g_solver="direct",swap_average=True)
         rms_naive.append(rmse(tau_naive, tau_true))
         rms_dr.append(rmse(tau_dr, tau_true))
         rms_r.append(rmse(tau_r, tau_true))
-    return np.array(rms_naive), np.array(rms_dr), np.array(rms_r)
+        rms_r3.append(rmse(tau_r3, tau_true))
+    return np.array(rms_naive), np.array(rms_dr), np.array(rms_r), np.array(rms_r3)
 
 def mean_ci(vals: np.ndarray) -> Tuple[float,float]:
     """Mean and 95% CI half‑width (normal approximation) across Monte‑Carlo replications."""
@@ -620,26 +623,26 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
     # --- Sim‑1
     rows = []
     for n in ns_list:
-        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060, verbose=(n==ns_list[0]))
-        mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
-        rows.append((n,mN,hN,mD,hD,mR,hR))
-    tab_n0 = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
+        rn, rd, rr, rr3 = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060, verbose=(n==ns_list[0]))
+        mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr); mR3,hR3 = mean_ci(rr3)
+        rows.append((n,mN,hN,mD,hD,mR,hR,mR3,hR3))
+    tab_n0 = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw", "FDR3_mean", "FDR3_hw"])
 
     # --- Sim‑2
     rows = []
     for n in ns_list:
-        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070, verbose=(n==ns_list[0]))
-        mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
-        rows.append((n,mN,hN,mD,hD,mR,hR))
-    tab_nh = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
+        rn, rd, rr, rr3 = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070, verbose=(n==ns_list[0]))
+        mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr); mR3,hR3 = mean_ci(rr3)
+        rows.append((n,mN,hN,mD,hD,mR,hR,mR3,hR3))
+    tab_nh = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw", "FDR3_mean", "FDR3_hw"])
 
     # --- Sim‑3
     rows = []
     for coeff in noise_grid_for_fixed_n:
-        rn, rd, rr = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080, verbose=(coeff==noise_grid_for_fixed_n[0]))
-        mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
-        rows.append((coeff,mN,hN,mD,hD,mR,hR))
-    tab_noise = pd.DataFrame(rows, columns=["delta","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
+        rn, rd, rr, rr3 = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080, verbose=(coeff==noise_grid_for_fixed_n[0]))
+        mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr); mR3,hR3 = mean_ci(rr3)
+        rows.append((coeff,mN,hN,mD,hD,mR,hR,mR3,hR3))
+    tab_noise = pd.DataFrame(rows, columns=["delta","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw", "FDR3_mean","FDR3_hw"])
     return tab_n0, tab_nh, tab_noise
 
 # ============================
@@ -652,6 +655,7 @@ def plot_rmse_vs_n_with_ci(tab: pd.DataFrame, title: str):
     plt.errorbar(n, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
     plt.errorbar(n, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4, label="FD-DR",   color=COLOR_FDDR)
     plt.errorbar(n, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4, label="FD-R",    color=COLOR_FDR)
+    plt.errorbar(n, tab["FDR3_mean"],   yerr=tab["FDR3_hw"], marker='*', linewidth=2.5, capsize=4, label="FD-R3",    color=COLOR_FDR3)
     plt.xlabel("Sample size n"); plt.ylabel("RMSE (mean ± 95% CI)")
     plt.title(title); plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
 
@@ -662,6 +666,7 @@ def plot_rmse_vs_delta_with_ci(tab: pd.DataFrame, n_for_title: int):
     plt.errorbar(dlt, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
     plt.errorbar(dlt, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4, label="FD-DR",   color=COLOR_FDDR)
     plt.errorbar(dlt, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4, label="FD-R",    color=COLOR_FDR)
+    plt.errorbar(dlt, tab["FDR3_mean"],   yerr=tab["FDR3_hw"],   marker='*', linewidth=2.5, capsize=4, label="FD-R3",    color=COLOR_FDR3)
     plt.xlabel("Structural nuisance shrinkage δ"); plt.ylabel("RMSE (mean ± 95% CI)")
     plt.title(f"FD CATE RMSE vs δ (n={n_for_title})"); plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
 
@@ -691,9 +696,10 @@ def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float
             rms_naive.append(rmse(tau_naive, tau_true))
             rms_dr.append(rmse(tau_dr, tau_true))
             rms_r.append(rmse(tau_r, tau_true))
-        mN,hN = mean_ci(np.array(rms_naive)); mD,hD = mean_ci(np.array(rms_dr)); mR,hR = mean_ci(np.array(rms_r))
-        rows.append((kappa_e,mN,hN,mD,hD,mR,hR))
-    tab = pd.DataFrame(rows, columns=["kappa_e","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
+            rms_r3.append(rmse(tau_r3, tau_true))
+        mN,hN = mean_ci(np.array(rms_naive)); mD,hD = mean_ci(np.array(rms_dr)); mR,hR = mean_ci(np.array(rms_r)); mR3,hR3 = mean_ci(np.array(rms_r3))
+        rows.append((kappa_e,mN,hN,mD,hD,mR,hR,mR3,hR3))
+    tab = pd.DataFrame(rows, columns=["kappa_e","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw", "FDR3_mean", "FDR3_hw"])
     return tab
 
 def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int):
@@ -703,6 +709,7 @@ def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int):
     plt.errorbar(x, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
     plt.errorbar(x, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4, label="FD-DR",   color=COLOR_FDDR)
     plt.errorbar(x, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4, label="FD-R",    color=COLOR_FDR)
+    plt.errorbar(x, tab["FDR3_mean"],   yerr=tab["FDR3_hw"],   marker='*', linewidth=2.5, capsize=4, label="FD-R3",    color=COLOR_FDR3)
     plt.xlabel("Weak-overlap severity κ_e  (larger = more extreme propensities)")
     plt.ylabel("RMSE (mean ± 95% CI)")
     plt.title(f"FD CATE RMSE vs Weak Overlap (n={n_for_title})")
@@ -715,7 +722,7 @@ if __name__ == "__main__":
     # (Smaller grid for responsiveness here; increase for paper‑grade results.)
     NS = [1000, 2500, 5000, 10000, 20000, 50000]
     DIM = 10
-    ROUNDS = 5
+    ROUNDS = 25
     DELTA_ABS_FOR_N = 0.5
     DELTA_GRID_FIXED_N = [0.0, 0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
     FIXED_N_FOR_SWEEP = 5000
