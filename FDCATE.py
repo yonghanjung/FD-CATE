@@ -69,12 +69,22 @@ def _seed_plus(seed, inc=0):
     except Exception:
         base = int(np.asarray(seed).item())
     return base + int(inc)
+
+def random_clip(a, low=-1, high=1, eps_max=1e-4):
+    """
+    Clips values into [low+eps_i, high-eps_i] with elementwise random eps_i.
+    """
+    eps = np.random.uniform(0, eps_max, size=a.shape)
+    lower = low + eps
+    upper = high - eps
+    return np.minimum(np.maximum(a, lower), upper)
     
 # Theory note (FD-DR): only *denominators* should be positivity-floored.
 # (Clipping numerators biases the orthogonal moments; cf. Lemma 2 FDPO.)
 PS_FLOOR_DENOM = 0.05 # 1e-8
 EPS_RAW = 1e-6  # tiny numeric clip to avoid exact 0/1 in raw weights
 EPS_DIV = 1e-8  # floor for denominators in internal residual ratios
+EPS_BOUND = 1e-4 # bound used for clipping 
 
 def cap01_raw(p: np.ndarray) -> np.ndarray:
     """Clip for probabilities that act as *weights* (close to raw)."""
@@ -245,8 +255,14 @@ def fit_nuisances_fold(C, X, Z, Y, train_idx, seed) -> NuisanceFold:
     Ctr, Xtr, Ztr, Ytr = C[train_idx], X[train_idx], Z[train_idx], Y[train_idx]
     eX = new_xgb_classifier(seed)
     q  = new_xgb_classifier(seed+1)
+    # ---- Synthetic analysis ------
     m  = new_xgb_regressor(seed+2)
     mY = new_xgb_regressor(seed+3)
+    
+    # ---- Real analysis ------
+    # m  = new_xgb_classifier(seed+2) 
+    # mY = new_xgb_classifier(seed+3) 
+    
     mZ = new_xgb_classifier(seed+4)
 
     eX.fit(Ctr, Xtr)
@@ -343,11 +359,13 @@ def m_zx_from_cells(m00,m01,m10,m11, z, x):
 # ============================
 # Estimators (OOF; cross‑fitted)
 # ============================
-def tau_naive_oof(C,X,Z,Y,folds,delta,seed):
+def tau_naive_oof(C,X,Z,Y,folds,delta, bounds_y, bounds_z, seed):
     """
     Naïve FD plug‑in τ(C) = Σ_{z,x}{q(z|1,C)−q(z|0,C)} e_x(C) m(z,x,C) (Eq. (4)).
     Raw weights only (no denominator clipping here).
     """
+    bound_y_low, bound_y_high = bounds_y if bounds_y is not None else (float('-inf'), float('inf'))
+    bound_z_low, bound_z_high = bounds_z if bounds_z is not None else (float('-inf'), float('inf'))
     n = len(X); tau = np.empty(n); tau[:] = np.nan
     for k, fold in enumerate(folds):
         rng = np.random.default_rng(seed + 100 + k)
@@ -359,11 +377,14 @@ def tau_naive_oof(C,X,Z,Y,folds,delta,seed):
         tau[idx] = cache['e1'] * s1 + cache['e0'] * s0
     return tau
 
-def tau_fd_dr_oof(C,X,Z,Y,folds,delta,seed):
+def tau_fd_dr_oof(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
     """
     FD‑DR via FDPO (Def. 2): φ_1 − φ_0 has E[·|C] = τ(C), doubly robust (Lemma 2).
     We regress ψ := φ1−φ0 on C using OLS. Only *denominators* get clipped.
     """
+    bound_y_low, bound_y_high = bounds_y if bounds_y is not None else (float('-inf'), float('inf'))
+    bound_z_low, bound_z_high = bounds_z if bounds_z is not None else (float('-inf'), float('inf'))
+    
     n = len(X); tau = np.empty(n); tau[:] = np.nan
     for k, fold in enumerate(folds):
         rng = np.random.default_rng(seed + 200 + k)
@@ -401,9 +422,10 @@ def tau_fd_dr_oof(C,X,Z,Y,folds,delta,seed):
             tau[idx] = model.predict(_zscore_apply(c, muC, sdC))
         else:
             tau[idx] = np.zeros_like(x, dtype=float)
+        tau = random_clip(tau,bound_y_low,bound_y_high)
     return tau
 
-def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed):
+def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
     """
     FD‑R via partial-linear factorization (Prop. 3; Thm. 4): τ(C) = b(C) ⋅ E[g(X,C)|C].
     1) Estimate b(C) by regressing (Z−E[Z|C]) on (X−E[X|C]) with weights (R-learner style).
@@ -411,6 +433,9 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed):
     3) Pseudo-g: ζ̂(C) = (1−ê)ĝ(0,C)+êĝ(1,C)+(X−ê){ĝ(1,C)−ĝ(0,C)} (Def. 4; Lemma 3).
     4) Output τ̂_R(C) = b̂(C) · ζ̂(C); to stabilize variance, regress b̂·ζ̂ on C and predict.
     """
+    bound_y_low, bound_y_high = bounds_y if bounds_y is not None else (float('-inf'), float('inf'))
+    bound_z_low, bound_z_high = bounds_z if bounds_z is not None else (float('-inf'), float('inf'))
+    
     n = len(X); tau = np.empty(n); tau[:] = np.nan
     eps = 1e-3
     for k, fold in enumerate(folds):
@@ -426,6 +451,7 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed):
         b_model = new_xgb_regressor(seed + 1)
         b_model.fit(c[mask_b], (rZ[mask_b]/rX[mask_b]), sample_weight=(rX[mask_b]**2))
         b_hat = b_model.predict(c)
+        b_hat = random_clip(b_hat, bound_z_low, bound_z_high)
 
         # Stage g: effect of Z on Y given (X,C)
         eZ = cache['q1_xc']
@@ -448,6 +474,9 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed):
         # g_model.fit(np.column_stack([x[mask_g], c[mask_g]]), (rY[mask_g]/rZ2[mask_g]), sample_weight=(rZ2[mask_g]**2))
         g1 = g_model.predict(np.column_stack([np.ones_like(x), c]))
         g0 = g_model.predict(np.column_stack([np.zeros_like(x), c]))
+        
+        g1 = random_clip(g1, bound_y_low, bound_y_high)
+        g0 = random_clip(g0, bound_y_low, bound_y_high)
 
         # Pseudo-g and composition; final smoothing ≈ E[b̂·ζ̂|C] #
         zeta = (1 - cache['e1'])*g0 + cache['e1']*g1 + (x - cache['e1'])*(g1 - g0)
@@ -460,6 +489,7 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed):
             tau[idx] = lin.predict(_zscore_apply(c, muC, sdC))
         else:
             tau[idx] = np.zeros_like(x, dtype=float)
+        tau = random_clip(tau,bound_y_low,bound_y_high)
     return tau
 
 def _ridge_solve(Xmat: np.ndarray, y: np.ndarray, alpha: float=1e-6) -> np.ndarray:
@@ -474,7 +504,7 @@ def _ridge_solve(Xmat: np.ndarray, y: np.ndarray, alpha: float=1e-6) -> np.ndarr
         theta = np.linalg.pinv(XtX) @ Xty
     return theta
 
-def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta: float,seed: int, g_solver: str="direct", swap_average: bool=True) -> np.ndarray:
+def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int, g_solver: str="direct", swap_average: bool=True, ) -> np.ndarray:
     """
     FD-R with 3-way cross-fitting and ζ-regression (Eq. 35).
     - Splits data into (D1,D2,D3).
@@ -482,6 +512,9 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta: float,seed: int, g_solver: str="di
       construct ζ on D3 and regress ζ ~ C to estimate γ(C). Return τ̂(C) = b̂(C)·γ̂(C).
     - If swap_average=True, swap D1 and D2 and average the two predictions on each D3 fold.
     """
+    bound_y_low, bound_y_high = bounds_y if bounds_y is not None else (float('-inf'), float('inf'))
+    bound_z_low, bound_z_high = bounds_z if bounds_z is not None else (float('-inf'), float('inf'))
+    
     n = len(X); tau_hat = np.empty(n); tau_hat[:] = np.nan
     rng = np.random.default_rng(_seed_plus(seed, 700))
     i1, i2, i3 = make_three_folds(n, rng)
@@ -547,8 +580,14 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta: float,seed: int, g_solver: str="di
             c3, x3, z3, y3 = C[D3], X[D3], Z[D3], Y[D3]
             cache3 = nuisance_cache_on(nuis, c3, x3, delta, n, rng)
             b_hat = b_model.predict(c3)
+            b_hat = random_clip(b_hat, bound_z_low, bound_z_high)
+            
             g1 = g_predict(np.ones_like(x3), c3)
             g0 = g_predict(np.zeros_like(x3), c3)
+            
+            g1 = random_clip(g1, bound_y_low, bound_y_high)
+            g0 = random_clip(g0, bound_y_low, bound_y_high)
+            
             zeta = (1 - cache3['e1'])*g0 + cache3['e1']*g1 + (x3 - cache3['e1'])*(g1 - g0)
             # γ̂(C) = E[ζ | C] via ridge on z-scored C (Eq. 35)
             target_tau = b_hat * zeta
@@ -561,6 +600,7 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta: float,seed: int, g_solver: str="di
             else:
                 preds.append( np.zeros_like(x3, dtype=float) )
         tau_hat[D3] = np.mean(np.vstack(preds), axis=0)
+        tau_hat = random_clip(tau_hat,bound_y_low,bound_y_high)
     return tau_hat
 
 # ============================
@@ -578,12 +618,15 @@ def rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean((a-b)**2)))
 
 def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = "rate",
-              base_seed: int = 2025, verbose: bool = False) -> Tuple[np.ndarray,np.ndarray,np.ndarray]:
+              base_seed: int = 2025, verbose: bool = False, bound_z=None, bound_y=None) -> Tuple[np.ndarray,np.ndarray,np.ndarray]:
     """
     R replications at fixed (n,d). Structural shrinkage δ:
       • if mode=="rate": δ = noise_coeff * n^{-1/4}  (rate-style noise),
       • else (mode=="abs"): δ = noise_coeff         (absolute misspecification).
     """
+    bound_y_low, bound_y_high = bound_y if bound_y is not None else (float('-inf'), float('inf'))
+    bound_z_low, bound_z_high = bound_z if bound_z is not None else (float('-inf'), float('inf'))
+    
     rms_naive=[]; rms_dr=[]; rms_r=[]; rms_r3=[]
     for r in range(R):
         seed = base_seed + 67*r + n
@@ -594,9 +637,9 @@ def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = 
             print(f"n={n}, mode={mode}, noise_coeff={noise_coeff}: do-diff={do:.3f}, obs-diff={obs:.3f}")
         folds = fit_folds(C,X,Z,Y,seed)
         delta = noise_coeff
-        tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,seed+10)
-        tau_dr    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,seed+20)
-        tau_r     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,seed+40,g_solver="direct",swap_average=True)
+        tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,bound_y, bound_z,seed+10)
+        tau_dr    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+20)
+        tau_r     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+40,g_solver="direct",swap_average=True)
         rms_naive.append(rmse(tau_naive, tau_true))
         rms_dr.append(rmse(tau_dr, tau_true))
         rms_r.append(rmse(tau_r, tau_true))
@@ -612,7 +655,7 @@ def mean_ci(vals: np.ndarray) -> Tuple[float,float]:
 # ============================
 # Three simulations FIRST (no plotting here)
 # ============================
-def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n, fixed_n, mode):
+def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n, fixed_n, mode, bound_z, bound_y):
     """
     Sim‑1: δ=0 across n-grid (no structural error).
     Sim‑2: δ=noise_abs_for_n across n-grid (moderate misspecification).
@@ -622,7 +665,7 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
     # --- Sim‑1
     rows = []
     for n in ns_list:
-        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060, verbose=(n==ns_list[0]))
+        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060, verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y)
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((n,mN,hN,mD,hD,mR,hR))
     tab_n0 = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -630,7 +673,7 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
     # --- Sim‑2
     rows = []
     for n in ns_list:
-        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070, verbose=(n==ns_list[0]))
+        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070, verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y)
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((n,mN,hN,mD,hD,mR,hR))
     tab_nh = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -638,7 +681,7 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
     # --- Sim‑3
     rows = []
     for coeff in noise_grid_for_fixed_n:
-        rn, rd, rr = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080, verbose=(coeff==noise_grid_for_fixed_n[0]))
+        rn, rd, rr = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080, verbose=(coeff==noise_grid_for_fixed_n[0]), bound_z=bound_z, bound_y=bound_y)
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((coeff,mN,hN,mD,hD,mR,hR))
     tab_noise = pd.DataFrame(rows, columns=["delta","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -689,7 +732,7 @@ def plot_rmse_vs_delta_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig:
 # ============================
 
 def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float],
-                                base_seed: int = 8080) -> pd.DataFrame:
+                                base_seed: int = 8080, bound_z=None, bound_y=None) -> pd.DataFrame:
     """
     Sim‑4: Weak overlap — fixed n, vary severity via slope multiplier kappa_e.
     For each kappa_e, run R replications and report RMSE mean ± 95% CI.
@@ -703,10 +746,9 @@ def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float
             C,X,Z,Y,tau_true = data.C, data.X, data.Z, data.Y, data.tau_true
             folds = fit_folds(C,X,Z,Y,seed)
             delta = 0.0  # no structural shrinkage in this sim; challenge is weak overlap only
-            tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,seed+10)
-            tau_dr    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,seed+20)
-            tau_r     = tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,seed+30)
-            tau_r3    = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,seed+30,g_solver="direct",swap_average=True)
+            tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+10)
+            tau_dr    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+20)
+            tau_r    = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+30,g_solver="direct",swap_average=True)
             rms_naive.append(rmse(tau_naive, tau_true))
             rms_dr.append(rmse(tau_dr, tau_true))
             rms_r.append(rmse(tau_r, tau_true))
@@ -741,16 +783,18 @@ if __name__ == "__main__":
     # (Smaller grid for responsiveness here; increase for paper‑grade results.)
     NS = [1000, 2500, 5000, 10000, 20000, 50000]
     DIM = 10
-    ROUNDS = 100
+    ROUNDS = 5
     DELTA_ABS_FOR_N = 0.5
     DELTA_GRID_FIXED_N = [0.0, 0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
     FIXED_N_FOR_SWEEP = 5000
     MODE = "rate" # "abs" or "rate"
-    VERSION_SAVE = "260923_0500_final"    
+    VERSION_SAVE = "260923_1400_final"   
+    BOUND_Z = [0,1] 
+    BOUND_Y = None
 
     # --- Run simulations (no plotting yet) ---
     tab_n0, tab_nh, tab_noise = run_three_simulations(
-        NS, DIM, ROUNDS, DELTA_ABS_FOR_N, DELTA_GRID_FIXED_N, FIXED_N_FOR_SWEEP, MODE
+        NS, DIM, ROUNDS, DELTA_ABS_FOR_N, DELTA_GRID_FIXED_N, FIXED_N_FOR_SWEEP, MODE, BOUND_Z, BOUND_Y
     )
     
     # --- Sim‑4: Weak Overlap (new) ---
