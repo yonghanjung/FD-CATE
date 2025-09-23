@@ -39,6 +39,8 @@ plots/
 *.egg-info/
 dist/
 build/
+simulation/
+data/
 *.egg
 *.pkl
 EOF

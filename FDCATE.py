@@ -6,6 +6,8 @@ from typing import List, Tuple
 from xgboost import XGBClassifier, XGBRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
+import os
+import pickle
 
 import warnings
 
@@ -67,7 +69,7 @@ def _seed_plus(seed, inc=0):
     except Exception:
         base = int(np.asarray(seed).item())
     return base + int(inc)
-
+    
 # Theory note (FD-DR): only *denominators* should be positivity-floored.
 # (Clipping numerators biases the orthogonal moments; cf. Lemma 2 FDPO.)
 PS_FLOOR_DENOM = 0.05 # 1e-8
@@ -645,25 +647,42 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
 # ============================
 # Plotting LATER (after sims have finished)
 # ============================
-def plot_rmse_vs_n_with_ci(tab: pd.DataFrame, title: str):
+def plot_rmse_vs_n_with_ci(tab: pd.DataFrame, title: str, out_dir_fig: str, VERSION_SAVE: str):
     """Plot RMSE vs n with mean ± 95% CI error bars for each method."""
     n = tab["n"].values
     plt.figure()
     plt.errorbar(n, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
     plt.errorbar(n, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4, label="FD-DR",   color=COLOR_FDDR)
     plt.errorbar(n, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4, label="FD-R",    color=COLOR_FDR)
-    plt.xlabel("Sample size n"); plt.ylabel("RMSE (mean ± 95% CI)")
-    plt.title(title); plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+    # plt.xlabel("Sample size n", fontsize=16); 
+    plt.xticks(fontsize=20)
+    # plt.ylabel("RMSE (mean ± 95% CI)", fontsize=16)
+    plt.yticks(fontsize=20)
+    # plt.title(title); 
+    # plt.legend(); 
+    plt.grid(False); 
+    plt.tight_layout(); 
+    plt.savefig(out_dir_fig + title + f"_{VERSION_SAVE}.pdf")
+    plt.show()
 
-def plot_rmse_vs_delta_with_ci(tab: pd.DataFrame, n_for_title: int):
+def plot_rmse_vs_delta_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig: str, VERSION_SAVE: str):
     """Plot RMSE vs structural noise δ (fixed n) with mean ± 95% CI error bars."""
     dlt = tab["delta"].values
     plt.figure()
     plt.errorbar(dlt, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
     plt.errorbar(dlt, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4, label="FD-DR",   color=COLOR_FDDR)
     plt.errorbar(dlt, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4, label="FD-R",    color=COLOR_FDR)
-    plt.xlabel("Structural nuisance shrinkage δ"); plt.ylabel("RMSE (mean ± 95% CI)")
-    plt.title(f"FD CATE RMSE vs δ (n={n_for_title})"); plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+    
+    # plt.xlabel("Structural nuisance shrinkage δ");
+    plt.xticks(fontsize=20)
+    # plt.ylabel("RMSE (mean ± 95% CI)", fontsize=16)
+    plt.yticks(fontsize=20)
+    # plt.title(f"FD CATE RMSE vs δ (n={n_for_title})");
+    plt.legend(); 
+    plt.grid(False); 
+    plt.tight_layout(); 
+    plt.savefig(out_dir_fig + f"vs_delta_at_fixed_n_{n_for_title}_{VERSION_SAVE}.pdf")
+    plt.show()
 
 # ============================
 # Execute: run 3 simulations first, then draw plots
@@ -696,17 +715,24 @@ def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float
     tab = pd.DataFrame(rows, columns=["kappa_e","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
     return tab
 
-def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int):
+def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig: str, VERSION_SAVE: str):
     """Plot RMSE vs weak-overlap severity κ_e (fixed n) with mean ± 95% CI error bars."""
     x = tab["kappa_e"].values
     plt.figure()
     plt.errorbar(x, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
     plt.errorbar(x, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4, label="FD-DR",   color=COLOR_FDDR)
     plt.errorbar(x, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4, label="FD-R",    color=COLOR_FDR)
-    plt.xlabel("Weak-overlap severity κ_e  (larger = more extreme propensities)")
-    plt.ylabel("RMSE (mean ± 95% CI)")
-    plt.title(f"FD CATE RMSE vs Weak Overlap (n={n_for_title})")
-    plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+    
+    # plt.xlabel("Weak-overlap severity κ_e  (larger = more extreme propensities)")
+    plt.xticks(fontsize=20)
+    # plt.ylabel("RMSE (mean ± 95% CI)")
+    plt.yticks(fontsize=20)
+    # plt.title(f"FD CATE RMSE vs Weak Overlap (n={n_for_title})")
+    # plt.legend(); 
+    plt.grid(False); 
+    plt.tight_layout(); 
+    plt.savefig(out_dir_fig + f"vs_overlap_violation_at_n{n_for_title}_{VERSION_SAVE}.pdf")
+    plt.show()
 
 # ============================
 # Execute: run 3 simulations first, then draw plots
@@ -715,11 +741,12 @@ if __name__ == "__main__":
     # (Smaller grid for responsiveness here; increase for paper‑grade results.)
     NS = [1000, 2500, 5000, 10000, 20000, 50000]
     DIM = 10
-    ROUNDS = 5
+    ROUNDS = 100
     DELTA_ABS_FOR_N = 0.5
     DELTA_GRID_FIXED_N = [0.0, 0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
     FIXED_N_FOR_SWEEP = 5000
     MODE = "rate" # "abs" or "rate"
+    VERSION_SAVE = "260923_0500_final"    
 
     # --- Run simulations (no plotting yet) ---
     tab_n0, tab_nh, tab_noise = run_three_simulations(
@@ -731,12 +758,52 @@ if __name__ == "__main__":
     FIXED_N_WEAK = FIXED_N_FOR_SWEEP  # reuse same n as Sim‑3 unless changed above
     tab_weak = run_weak_overlap_simulation(FIXED_N_WEAK, DIM, ROUNDS, SEVERITY_GRID, base_seed=9090)
     print(tab_weak)
+    
+    # ---- SAVE ---- 
+    config = {
+        "NS": NS,
+        "DIM": DIM,
+        "ROUNDS": ROUNDS,
+        "DELTA_ABS_FOR_N": DELTA_ABS_FOR_N,  # (note: ABS; not BAS)
+        "DELTA_GRID_FIXED_N": DELTA_GRID_FIXED_N,
+        "FIXED_N_FOR_SWEEP": FIXED_N_FOR_SWEEP,
+        "FIXED_N_WEAK": FIXED_N_WEAK,
+        "MODE": MODE,
+        "VERSION_SAVE": VERSION_SAVE,
+    }
+    
+    results = {
+        "tab_n0": tab_n0, 
+        "tab_nh": tab_nh,
+        "tab_noise": tab_noise,
+        "tab_weak": tab_weak
+    }
+    
+    # Bundle everything into one dictionary
+    bundle = {
+        "config": config,
+        "results": results,
+    }
+    
+    # Ensure the target folder exists
+    out_dir = "simulation/pkl/"
+    out_dir_fig = "simulation/plot/"
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Path based on VERSION_SAVE
+    pkl_path = os.path.join(out_dir, f"simulation_{VERSION_SAVE}.pkl")
+    
+    # Save as pickle
+    with open(pkl_path, "wb") as f:
+        pickle.dump(bundle, f, protocol=pickle.HIGHEST_PROTOCOL)    
 
     # --- Draw plots only after all sims complete ---
-    plot_rmse_vs_n_with_ci(tab_n0,  "FD CATE RMSE vs n — δ=0 (no structural nuisance error)")
-    plot_rmse_vs_n_with_ci(tab_nh,  f"FD CATE RMSE vs n — δ={DELTA_ABS_FOR_N} (structural nuisance shrinkage)")
-    plot_rmse_vs_delta_with_ci(tab_noise, FIXED_N_FOR_SWEEP)
-    plot_rmse_vs_overlap_with_ci(tab_weak, FIXED_N_WEAK)
+    plot_rmse_vs_n_with_ci(tab_n0,  "no_noise", out_dir_fig, VERSION_SAVE)
+    plot_rmse_vs_n_with_ci(tab_nh,  f"structural_noise_{DELTA_ABS_FOR_N}",out_dir_fig, VERSION_SAVE)
+    plot_rmse_vs_delta_with_ci(tab_noise, FIXED_N_FOR_SWEEP, out_dir_fig, VERSION_SAVE)
+    plot_rmse_vs_overlap_with_ci(tab_weak, FIXED_N_WEAK, out_dir_fig, VERSION_SAVE)
 
     # Optional: print the numeric summaries (means ± CI half‑widths)
     print(tab_n0); print(tab_nh); print(tab_noise)
+    
+    
