@@ -422,7 +422,9 @@ def tau_fd_dr_oof(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
             tau[idx] = model.predict(_zscore_apply(c, muC, sdC))
         else:
             tau[idx] = np.zeros_like(x, dtype=float)
-        tau = random_clip(tau,bound_y_low,bound_y_high)
+        bound_tau = list(np.array(bounds_y) - np.array(bounds_y[::-1])) if bounds_y is not None else None
+        bound_tau_low, bound_tau_high = bound_tau if bound_tau is not None else (float('-inf'), float('inf'))
+        tau = random_clip(tau,bound_tau_low,bound_tau_high)
     return tau
 
 def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
@@ -451,7 +453,10 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
         b_model = new_xgb_regressor(seed + 1)
         b_model.fit(c[mask_b], (rZ[mask_b]/rX[mask_b]), sample_weight=(rX[mask_b]**2))
         b_hat = b_model.predict(c)
-        b_hat = random_clip(b_hat, bound_z_low, bound_z_high)
+        
+        bound_b = list(np.array(bounds_z) - np.array(bounds_z[::-1])) if bounds_z is not None else None
+        bound_b_low, bound_b_high = bound_b if bound_b is not None else (float('-inf'), float('inf'))
+        b_hat = random_clip(b_hat, bound_b_low, bound_b_high)
 
         # Stage g: effect of Z on Y given (X,C)
         eZ = cache['q1_xc']
@@ -475,8 +480,11 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
         g1 = g_model.predict(np.column_stack([np.ones_like(x), c]))
         g0 = g_model.predict(np.column_stack([np.zeros_like(x), c]))
         
-        g1 = random_clip(g1, bound_y_low, bound_y_high)
-        g0 = random_clip(g0, bound_y_low, bound_y_high)
+        bound_g = list(np.array(bounds_y) - np.array(bounds_y[::-1])) if bounds_y is not None else None
+        bound_g_low, bound_g_high = bound_g if bound_g is not None else (float('-inf'), float('inf'))
+        
+        g1 = random_clip(g1, bound_g_low, bound_g_high)
+        g0 = random_clip(g0, bound_g_low, bound_g_high)
 
         # Pseudo-g and composition; final smoothing ≈ E[b̂·ζ̂|C] #
         zeta = (1 - cache['e1'])*g0 + cache['e1']*g1 + (x - cache['e1'])*(g1 - g0)
@@ -489,7 +497,10 @@ def tau_fd_r_oof_smoothed(C,X,Z,Y,folds,delta,bounds_y,bounds_z,seed):
             tau[idx] = lin.predict(_zscore_apply(c, muC, sdC))
         else:
             tau[idx] = np.zeros_like(x, dtype=float)
-        tau = random_clip(tau,bound_y_low,bound_y_high)
+        
+        bound_tau = list(np.array(bounds_y) - np.array(bounds_y[::-1])) if bounds_y is not None else None
+        bound_tau_low, bound_tau_high = bound_tau if bound_tau is not None else (float('-inf'), float('inf'))
+        tau = random_clip(tau,bound_tau_low,bound_tau_high)
     return tau
 
 def _ridge_solve(Xmat: np.ndarray, y: np.ndarray, alpha: float=1e-6) -> np.ndarray:
@@ -580,13 +591,19 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int, g_sol
             c3, x3, z3, y3 = C[D3], X[D3], Z[D3], Y[D3]
             cache3 = nuisance_cache_on(nuis, c3, x3, delta, n, rng)
             b_hat = b_model.predict(c3)
-            b_hat = random_clip(b_hat, bound_z_low, bound_z_high)
+            
+            bound_b = list(np.array(bounds_z) - np.array(bounds_z[::-1])) if bounds_z is not None else None
+            bound_b_low, bound_b_high = bound_b if bound_b is not None else (float('-inf'), float('inf'))
+            b_hat = random_clip(b_hat, bound_b_low, bound_b_high)
             
             g1 = g_predict(np.ones_like(x3), c3)
             g0 = g_predict(np.zeros_like(x3), c3)
             
-            g1 = random_clip(g1, bound_y_low, bound_y_high)
-            g0 = random_clip(g0, bound_y_low, bound_y_high)
+            bound_g = list(np.array(bounds_y) - np.array(bounds_y[::-1])) if bounds_y is not None else None
+            bound_g_low, bound_g_high = bound_g if bound_g is not None else (float('-inf'), float('inf'))
+            
+            g1 = random_clip(g1, bound_g_low, bound_g_high)
+            g0 = random_clip(g0, bound_g_low, bound_g_high)
             
             zeta = (1 - cache3['e1'])*g0 + cache3['e1']*g1 + (x3 - cache3['e1'])*(g1 - g0)
             # γ̂(C) = E[ζ | C] via ridge on z-scored C (Eq. 35)
@@ -600,7 +617,9 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int, g_sol
             else:
                 preds.append( np.zeros_like(x3, dtype=float) )
         tau_hat[D3] = np.mean(np.vstack(preds), axis=0)
-        tau_hat = random_clip(tau_hat,bound_y_low,bound_y_high)
+        bound_tau = list(np.array(bounds_y) - np.array(bounds_y[::-1])) if bounds_y is not None else None
+        bound_tau_low, bound_tau_high = bound_tau if bound_tau is not None else (float('-inf'), float('inf'))
+        tau_hat = random_clip(tau_hat,bound_tau_low,bound_tau_high)
     return tau_hat
 
 # ============================

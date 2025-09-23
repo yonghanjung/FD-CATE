@@ -122,10 +122,12 @@ def quick_diag(X, Z, Y):
 # ---- 4) Wire up to your FDCATE.py
 def run_fd_estimators(C, X, Z, Y, seed=2025, delta=0.0):
     from FDCATE import fit_folds, tau_fd_dr_oof, tau_fd_r_3way_oof_smoothed, tau_naive_oof
+    bound_z = [0,1]
+    bound_y = [0,1]
     folds = fit_folds(C, X, Z, Y, seed)
-    tau_dr = tau_fd_dr_oof(C, X, Z, Y, folds, delta, seed)
-    tau_r  = tau_fd_r_3way_oof_smoothed(C, X, Z, Y, delta, seed)
-    tau_naive = tau_naive_oof(C, X, Z, Y, folds, delta, seed)
+    tau_dr = tau_fd_dr_oof(C, X, Z, Y, folds, delta,bound_y,bound_z, seed)
+    tau_r  = tau_fd_r_3way_oof_smoothed(C, X, Z, Y, delta,bound_y,bound_z, seed)
+    tau_naive = tau_naive_oof(C, X, Z, Y, folds, delta,bound_y,bound_z, seed)
     return tau_dr, tau_r, tau_naive
 
 def summarize(name, tau):
