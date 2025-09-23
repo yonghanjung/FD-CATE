@@ -550,13 +550,15 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta: float,seed: int, g_solver: str="di
             g0 = g_predict(np.zeros_like(x3), c3)
             zeta = (1 - cache3['e1'])*g0 + cache3['e1']*g1 + (x3 - cache3['e1'])*(g1 - g0)
             # γ̂(C) = E[ζ | C] via ridge on z-scored C (Eq. 35)
-            muC, sdC = _zscore_fit(c3)
-            C3z = _zscore_apply(c3, muC, sdC)
-            gamma_model = Ridge(alpha=1e-6)
-            gamma_model.fit(C3z, zeta)
-            gamma_hat = gamma_model.predict(C3z)
-            preds.append(b_hat * gamma_hat)
-        # Average predictions for this D3 fold and place into tau_hat
+            target_tau = b_hat * zeta
+            lin = Ridge(alpha=1e-6)
+            mask = np.isfinite(target_tau)
+            if np.any(mask):
+                muC, sdC = _zscore_fit(c3[mask])
+                lin.fit(_zscore_apply(c3[mask], muC, sdC), target_tau[mask])
+                preds.append( lin.predict(_zscore_apply(c3, muC, sdC)) )
+            else:
+                preds.append( np.zeros_like(x3, dtype=float) )
         tau_hat[D3] = np.mean(np.vstack(preds), axis=0)
     return tau_hat
 
