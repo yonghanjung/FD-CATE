@@ -48,3 +48,4 @@ EOF
 *.dat
 *.npz
 *.csv
+Stata_ReadInProgramAllSurveys.do
