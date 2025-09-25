@@ -44,3 +44,7 @@ data/
 *.egg
 *.pkl
 EOF
+*.xpt
+*.dat
+*.npz
+*.csv
