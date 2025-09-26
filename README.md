@@ -1,6 +1,6 @@
-# Heterogeneous Front-Door Effects: Debiased Estimation with Quasi‑Oracle Guarantees
+# Debiased Front-Door Learners for Heterogeneous Effects
 
-This supplement accompanies the  **“Debiased Front-Door Learners for Heterogeneous Effects.”**  
+This supplement accompanies the a paper **“Debiased Front-Door Learners for Heterogeneous Effects”**.  
 It includes minimal, runnable code to reproduce (i) the synthetic studies and (ii) the FARS case study reported in the paper.
 
 ---
@@ -97,12 +97,12 @@ Expected outputs:
 
 ## Reproducibility checklist (what we fix to mirror the paper)
 
-- Cross‑fitting folds/splits (2‑way for FD‑PI/FD‑DR; 3‑way for FD‑R’s \(b,g,\gamma\) steps).
+- Cross-fitting folds/splits (2-way for FD-PI/FD-DR; 3-way for FD-R’s $b,g,\gamma$ steps).
 - XGBoost hyperparameters and linear ridge for the final regression(s).
-- \(n^{-1/4}\)‑scale nuisance perturbations used in stress tests.
-- Weak‑overlap stress by steepening the treatment propensity (no density ratios in FD‑R).
+- $n^{-1/4}$-scale nuisance perturbations used in stress tests.
+- Weak-overlap stress by steepening the treatment propensity (no density ratios in FD-R).
 
-<!-- ---
+---
 
 ## Citation
 
@@ -115,4 +115,4 @@ If you use this supplement, please cite the paper:
   booktitle={International Conference on Learning Representations (ICLR)},
   year={2026}
 }
-``` -->
+```
