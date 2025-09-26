@@ -18,7 +18,7 @@ env/
 Thumbs.db
 
 # Data & experiment outputs
-data/
+# data/
 results/
 outputs/
 artifacts/
@@ -27,6 +27,9 @@ checkpoints/
 models/
 figures/
 plots/
+
+# Backup data 
+backup/
 
 # Generated artifacts
 *.png
@@ -47,5 +50,5 @@ EOF
 *.xpt
 *.dat
 *.npz
-*.csv
+# *.csv
 Stata_ReadInProgramAllSurveys.do
