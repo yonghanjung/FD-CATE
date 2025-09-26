@@ -43,7 +43,7 @@ backup/
 dist/
 build/
 simulation/
-data/
+# data/
 *.egg
 *.pkl
 EOF
