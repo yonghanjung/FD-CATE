@@ -10,6 +10,7 @@ It includes minimal, runnable code to reproduce (i) the synthetic studies and (i
 - `FDCATE.py` — Implementation of **FD‑DR‑Learner** and **FD‑R‑Learner** and a plug‑in baseline (FD‑PI); contains the synthetic experiment driver.
 - `analyze_fars_2000_fd.py` — End‑to‑end script that builds the state–year panel for the **FARS primary seat‑belt law** case study and runs FD‑PI / FD‑DR / FD‑R on it.
 - `README.md` — This file.
+- `data/fars` - A folder containing the the FARS data. 
 
 > **Note.** The estimators, cross‑fitting scheme, XGBoost settings, and stabilization (denominator flooring at 0.05 for inverse weights/density ratios) match the experimental protocol described in the paper.
 
