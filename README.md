@@ -45,7 +45,7 @@ What it does:
 - Fits **FD‑PI**, **FD‑DR**, and **FD‑R** with cross‑fitting.
 - Evaluates RMSE across:
   - sample size sweeps,
-  - nuisance “noise” at the \(n^{-1/4}\) scale,
+  - nuisance “noise” at the $n^{-1/4}$ scale,
   - weak‑overlap stress tests.
 
 Expected outputs:
@@ -69,13 +69,13 @@ python analyze_fars_2000_fd.py
 What it does:
 - Downloads/loads FARS and NHTSA belt‑use survey tables (public sources) for a **balanced state–year panel**.
 - Constructs variables:
-  - **Treatment** \(X\): primary law in force (state‑year indicator).
-  - **Mediator** \(Z\): seat‑belt use rate \([0,1]\).
-  - **Outcome** \(Y\): occupant fatality rate (per population or per exposure, depending on availability).
-  - **Covariates** \(C\): state & year fixed effects and policy‑relevant factors (weather severity, road‑mix, enforcement, driver status, etc.).
+  - **Treatment** $X$: primary law in force (state‑year indicator).
+  - **Mediator** $Z$: seat‑belt use rate.
+  - **Outcome** $Y$: occupant fatality rate (per population or per exposure, depending on availability).
+  - **Covariates** $C$: state & year fixed effects and policy‑relevant factors (weather severity, road‑mix, enforcement, driver status, etc.).
 - Fits **FD‑PI**, **FD‑DR**, and **FD‑R** and produces:
-  - Distributions of \(\hat\tau(C)\),
-  - Top‑\(\alpha\) concentration curves,
+  - Distributions of $\hat\tau(C)$,
+  - Top-$\alpha$ concentration curves,
   - SHAP‑based covariate importance.
 
 Expected outputs:
@@ -87,14 +87,6 @@ Expected outputs:
 
 ---
 
-## Troubleshooting
-
-- **macOS OpenSSL/LibreSSL warnings** during downloads (urllib3): these are harmless in most cases. If downloads fail, use a Python/conda that links against OpenSSL 1.1.1+.
-- **Memory/time**: the largest synthetic settings and SHAP plots can be compute‑intensive; reduce \(n\) or disable SHAP if needed.
-- **No internet environment**: if automatic downloads are blocked, pre‑place the expected FARS/NHTSA files in the directory paths referenced inside `analyze_fars_2000_fd.py` and set the script flags (if provided) to skip download.
-
----
-
 ## Reproducibility checklist (what we fix to mirror the paper)
 
 - Cross-fitting folds/splits (2-way for FD-PI/FD-DR; 3-way for FD-R’s $b,g,\gamma$ steps).
@@ -102,7 +94,7 @@ Expected outputs:
 - $n^{-1/4}$-scale nuisance perturbations used in stress tests.
 - Weak-overlap stress by steepening the treatment propensity (no density ratios in FD-R).
 
----
+<!-- ---
 
 ## Citation
 
@@ -115,4 +107,4 @@ If you use this supplement, please cite the paper:
   booktitle={International Conference on Learning Representations (ICLR)},
   year={2026}
 }
-```
+``` -->
