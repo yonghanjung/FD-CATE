@@ -1,6 +1,8 @@
 # Debiased Front-Door Learners for Heterogeneous Effects
 
-This supplement accompanies the a paper [**Debiased Front-Door Learners for Heterogeneous Effects**](https://arxiv.org/abs/2509.22531).  
+This repository contains the official implementation of the paper
+[**Debiased Front-Door Learners for Heterogeneous Effects**](https://arxiv.org/abs/2509.22531).
+ 
 It includes minimal, runnable code to reproduce (i) the synthetic studies and (ii) the FARS case study reported in the paper.
 
 ---
