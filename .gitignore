@@ -52,3 +52,4 @@ EOF
 *.npz
 # *.csv
 Stata_ReadInProgramAllSurveys.do
+simulation_log.txt

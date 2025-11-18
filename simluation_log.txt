@@ -1,0 +1,29 @@
+### Compare with Chen 2025 (NN) ###
+
+python3 FDCATE.py \
+  --version-save 251117_2000 \
+  --ns 1000 2500 5000 10000 20000 50000 \
+  --delta-grid-fixed-n 0.0 0.15 0.3 0.45 0.6 0.85 1.0 \
+  --fixed-n-for-sweep 5000 \
+  --rounds 10 \
+  --dim 10 \
+  --mode rate \
+  --nuisance-learner nn \
+  --no-save --no-plots \
+  --skip-weak-overlap --skip-mediator-confound
+
+
+##########################################
+
+2. Small sample example (XGBoost)
+
+python3 FDCATE.py \
+  --version-save 251117_2000 \
+  --ns 100 250 500 1000 2000 5000 \
+  --delta-grid-fixed-n 0.0 0.15 0.3 0.45 0.6 0.85 1.0 \
+  --fixed-n-for-sweep 500 \
+  --rounds 10 \
+  --dim 10 \
+  --mode rate \
+  --no-save --no-plots \
+  --skip-weak-overlap --skip-mediator-confound

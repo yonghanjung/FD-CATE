@@ -623,7 +623,9 @@ def mse(a: np.ndarray, b: np.ndarray) -> float:
 
 def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = "rate",
               base_seed: int = 2025, verbose: bool = False, bound_z=None, bound_y=None,
-              nuisance_learner: str = "xgb") -> Tuple[np.ndarray,np.ndarray,np.ndarray]:
+              nuisance_learner: str = "xgb", progress=None, progress_stage: str = "",
+              progress_offset: int = 0, progress_total: int = 0,
+              progress_detail: str = "") -> Tuple[np.ndarray,np.ndarray,np.ndarray]:
     """
     R replications at fixed (n,d). Structural shrinkage δ:
       • if mode=="rate": δ = noise_coeff * n^{-1/4}  (rate-style noise),
@@ -656,6 +658,10 @@ def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = 
         rms_naive.append(rmse(tau_naive, tau_true))
         rms_dr.append(rmse(tau_dr, tau_true))
         rms_r.append(rmse(tau_r, tau_true))
+        if progress and progress_stage and progress_total:
+            detail_prefix = f"{progress_detail}, " if progress_detail else ""
+            detail = f"{detail_prefix}round={r+1}/{R}, noise={noise_coeff}"
+            progress(progress_stage, progress_offset + r + 1, progress_total, detail)
     return np.array(rms_naive), np.array(rms_dr), np.array(rms_r)
 
 def mean_ci(vals: np.ndarray) -> Tuple[float,float]:
@@ -679,13 +685,15 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
     """
     # --- Sim‑1
     rows = []
-    total_ns = len(ns_list)
+    total_rounds = len(ns_list) * R
     for idx, n in enumerate(ns_list):
-        if progress:
-            progress("Sim-1", idx+1, total_ns, f"n={n}")
-        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060,
-                               verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y,
-                               nuisance_learner=nuisance_learner)
+        rn, rd, rr = run_one_n(
+            n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060,
+            verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y,
+            nuisance_learner=nuisance_learner, progress=progress,
+            progress_stage="Sim-1", progress_offset=idx*R,
+            progress_total=total_rounds, progress_detail=f"n={n}"
+        )
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((n,mN,hN,mD,hD,mR,hR))
     tab_n0 = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -693,24 +701,28 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
     # --- Sim‑2
     rows = []
     for idx, n in enumerate(ns_list):
-        if progress:
-            progress("Sim-2", idx+1, total_ns, f"n={n}")
-        rn, rd, rr  = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070,
-                                verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y,
-                                nuisance_learner=nuisance_learner)
+        rn, rd, rr  = run_one_n(
+            n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070,
+            verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y,
+            nuisance_learner=nuisance_learner, progress=progress,
+            progress_stage="Sim-2", progress_offset=idx*R,
+            progress_total=total_rounds, progress_detail=f"n={n}"
+        )
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((n,mN,hN,mD,hD,mR,hR))
     tab_nh = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
 
     # --- Sim‑3
     rows = []
-    total_coeff = len(noise_grid_for_fixed_n)
+    total_rounds = len(noise_grid_for_fixed_n) * R
     for idx, coeff in enumerate(noise_grid_for_fixed_n):
-        if progress:
-            progress("Sim-3", idx+1, total_coeff, f"delta={coeff}")
-        rn, rd, rr = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080,
-                               verbose=(coeff==noise_grid_for_fixed_n[0]), bound_z=bound_z,
-                               bound_y=bound_y, nuisance_learner=nuisance_learner)
+        rn, rd, rr = run_one_n(
+            fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080,
+            verbose=(coeff==noise_grid_for_fixed_n[0]), bound_z=bound_z,
+            bound_y=bound_y, nuisance_learner=nuisance_learner, progress=progress,
+            progress_stage="Sim-3", progress_offset=idx*R,
+            progress_total=total_rounds, progress_detail=f"delta={coeff}, n={fixed_n}"
+        )
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((coeff,mN,hN,mD,hD,mR,hR))
     tab_noise = pd.DataFrame(rows, columns=["delta","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -772,9 +784,8 @@ def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float
     """
     rows = []
     total = len(kappa_e_grid)
+    total_rounds = total * R
     for idx, kappa_e in enumerate(kappa_e_grid):
-        if progress:
-            progress("Sim-4", idx+1, total, f"kappa_e={kappa_e}")
         rms_naive=[]; rms_dr=[]; rms_r=[]; rms_r3=[]; rms_cfd=[]
         for r in range(R):
             seed = base_seed + 97*r + int(10*kappa_e) + n
@@ -792,6 +803,9 @@ def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float
             rms_naive.append(rmse(tau_naive, tau_true))
             rms_dr.append(rmse(tau_dr, tau_true))
             rms_r.append(rmse(tau_r, tau_true))
+            if progress and total_rounds:
+                detail = f"kappa_e={kappa_e}, round={r+1}/{R}"
+                progress("Sim-4", idx*R + r + 1, total_rounds, detail)
             # rms_cfd.append(rmse(tau_cfd, tau_true))
             
         mN,hN = mean_ci(np.array(rms_naive)); mD,hD = mean_ci(np.array(rms_dr)); mR,hR = mean_ci(np.array(rms_r))
@@ -808,9 +822,8 @@ def run_mediator_confounding_simulation(n: int, d: int, R: int, confound_grid: L
     """
     rows = []
     total = len(confound_grid)
+    total_rounds = total * R
     for idx, strength in enumerate(confound_grid):
-        if progress:
-            progress("Sim-5", idx+1, total, f"confound={strength}")
         mse_naive=[]; mse_dr=[]; mse_r=[]
         for r in range(R):
             seed = base_seed + 83*r + int(100*strength) + n
@@ -826,6 +839,9 @@ def run_mediator_confounding_simulation(n: int, d: int, R: int, confound_grid: L
             mse_naive.append(mse(tau_naive, tau_true))
             mse_dr.append(mse(tau_dr, tau_true))
             mse_r.append(mse(tau_r, tau_true))
+            if progress and total_rounds:
+                detail = f"confound={strength}, round={r+1}/{R}"
+                progress("Sim-5", idx*R + r + 1, total_rounds, detail)
         mN,hN = mean_ci(np.array(mse_naive)); mD,hD = mean_ci(np.array(mse_dr)); mR,hR = mean_ci(np.array(mse_r))
         rows.append((strength,mN,hN,mD,hD,mR,hR))
     tab = pd.DataFrame(rows, columns=["confound_strength","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -991,7 +1007,16 @@ def run_from_args(args):
     severity_grid = list(args.severity_grid)
     fixed_n_weak = args.fixed_n_weak if args.fixed_n_weak is not None else args.fixed_n_for_sweep
     progress = ProgressPrinter(enabled=not args.quiet)
-    progress.log("Starting FD-CATE simulations...")
+    config_summary = (
+        f"ns={ns_list}, dim={args.dim}, rounds={args.rounds}, mode={args.mode}, "
+        f"delta_abs_for_n={args.delta_abs_for_n}, delta_grid={delta_grid}, "
+        f"fixed_n_for_sweep={args.fixed_n_for_sweep}, fixed_n_weak={fixed_n_weak}, "
+        f"severity_grid={severity_grid}, mediator_confound_grid={mediator_confound_grid}, "
+        f"nuisance_learner={args.nuisance_learner}, bound_z={bound_z}, bound_y={bound_y}, "
+        f"version_save={args.version_save}"
+    )
+    progress.log("Starting FD-CATE simulations with settings:")
+    progress.log(f"  {config_summary}")
 
     # --- Run simulations (no plotting yet) ---
     progress.log("Running Sim-1 to Sim-3 sweeps.")
