@@ -2,29 +2,33 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Any, List, Literal, Tuple, cast
 from xgboost import XGBClassifier, XGBRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
+from sklearn.neural_network import MLPClassifier, MLPRegressor
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 import os
 import pickle
+import argparse
 
 import warnings
 
-# Silence only RuntimeWarnings coming from sklearn's LinearModel matmul
+# Silence every warning for smoother CLI use (safe for research scripts).
+warnings.filterwarnings("ignore")
+
+# Backwards-compatible explicit silencing for older environments (harmless no-ops now).
 warnings.filterwarnings(
     "ignore",
     category=RuntimeWarning,
     module=r".*sklearn\.linear_model\._base"
 )
-
-# Silence any RuntimeWarning whose message mentions "encountered in matmul"
 warnings.filterwarnings(
     "ignore",
     category=RuntimeWarning,
     message=r".*encountered in matmul"
 )
-
 warnings.filterwarnings("ignore", message=".*Using a target size.*")
 
 
@@ -126,6 +130,43 @@ def new_xgb_regressor(seed: int) -> XGBRegressor:
                         reg_lambda=1.0, tree_method="hist", n_jobs=2,
                         random_state=seed, verbosity=0)
 
+LearnerType = Literal["xgb", "nn"]
+
+def new_nn_classifier(seed: int) -> Pipeline:
+    """Two-layer MLP classifier wrapped with standardization."""
+    mlp = MLPClassifier(hidden_layer_sizes=(64, 64), activation="relu",
+                        learning_rate_init=1e-3, alpha=1e-4, batch_size=128,
+                        max_iter=500, early_stopping=True, n_iter_no_change=20,
+                        random_state=seed)
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("mlp", mlp),
+    ])
+
+def new_nn_regressor(seed: int) -> Pipeline:
+    """Two-layer MLP regressor wrapped with standardization."""
+    mlp = MLPRegressor(hidden_layer_sizes=(64, 64), activation="relu",
+                       learning_rate_init=1e-3, alpha=1e-4, batch_size=128,
+                       max_iter=800, early_stopping=True, n_iter_no_change=20,
+                       random_state=seed)
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("mlp", mlp),
+    ])
+
+def _normalize_learner(name: str) -> LearnerType:
+    """Normalize/validate the learner identifier."""
+    resolved = (name or "xgb").lower()
+    if resolved not in ("xgb", "nn"):
+        raise ValueError(f"Unknown learner '{name}'. Valid options are 'xgb' and 'nn'.")
+    return cast(LearnerType, resolved)
+
+def _classifier_factory(learner: LearnerType, seed: int):
+    return new_xgb_classifier(seed) if learner == "xgb" else new_nn_classifier(seed)
+
+def _regressor_factory(learner: LearnerType, seed: int):
+    return new_xgb_regressor(seed) if learner == "xgb" else new_nn_regressor(seed)
+
 # ============================
 def _g_features(x: np.ndarray, c: np.ndarray) -> np.ndarray:
     """
@@ -144,18 +185,21 @@ def _g_features(x: np.ndarray, c: np.ndarray) -> np.ndarray:
 @dataclass
 class FDParams:
     beta0: float; beta_c: np.ndarray; beta_u: float
-    alpha0: float; alpha_c: np.ndarray; alpha_x: float
+    alpha0: float; alpha_c: np.ndarray; alpha_x: float; alpha_u: float
     theta0: float; theta_c: np.ndarray; theta_z: float; theta_u: float
 
 @dataclass
 class SimData:
     C: np.ndarray; X: np.ndarray; Z: np.ndarray; Y: np.ndarray; tau_true: np.ndarray; params: FDParams
 
-def simulate_fd_data_md(n: int = 5000, d: int = 10, seed: int = 123) -> SimData:
+def simulate_fd_data_md(n: int = 5000, d: int = 10, seed: int = 123,
+                        mediator_confound: float = 0.0) -> SimData:
     """
     Synthetic front-door DGP with continuous Y and binary X,Z.
     It enforces: E[Y|do(X=1)] > E[Y|do(X=0)] while E[Y|X=1] < E[Y|X=0].
-    True τ(C) equals θ_z ⋅ {q(1|1,C) − q(1|0,C)} for binary Z (Eq. (4) specialization).
+    `mediator_confound` controls the strength of latent U on the mediator;
+    0 preserves the standard FD assumptions, >0 injects mediator confounding.
+    True τ(C,U) equals θ_z ⋅ {q(1|1,C,U) − q(1|0,C,U)} under this SEM.
     """
     rng = np.random.default_rng(seed)
     C = rng.normal(0,1,size=(n,d))
@@ -168,17 +212,22 @@ def simulate_fd_data_md(n: int = 5000, d: int = 10, seed: int = 123) -> SimData:
 
     # Moderate coefficients → comfortable positivity (no near 0/1 propensities).
     params = FDParams(beta0=0.1, beta_c=0.7*wX, beta_u=0.7,
-                      alpha0=0.1, alpha_c=0.7*wZ, alpha_x=1.2,
+                      alpha0=0.1, alpha_c=0.7*wZ, alpha_x=1.2, alpha_u=mediator_confound,
                       theta0=0.0, theta_c=0.7*wY, theta_z=1.4, theta_u=-2.4)
 
     # Propensities and draws
     pX = sigmoid(params.beta0 + C@params.beta_c + params.beta_u*U); X = rng.binomial(1,pX)
-    pZ = sigmoid(params.alpha0 + C@params.alpha_c + params.alpha_x*X); Z = rng.binomial(1,pZ)
+    def q1_given_x(x_arr, u_arr):
+        lin = params.alpha0 + C@params.alpha_c + params.alpha_x * x_arr + params.alpha_u * u_arr
+        return sigmoid(lin)
+    pZ = q1_given_x(X, U); Z = rng.binomial(1,pZ)
 
     # Outcome and τ_true(C)
     eps = rng.normal(0,1,size=n)
     Y = params.theta0 + C@params.theta_c + params.theta_z*Z + params.theta_u*U + eps
-    b_true   = sigmoid(params.alpha0 + C@params.alpha_c + params.alpha_x) - sigmoid(params.alpha0 + C@params.alpha_c)
+    q11 = q1_given_x(np.ones(n), U)
+    q10 = q1_given_x(np.zeros(n), U)
+    b_true   = q11 - q10
     tau_true = params.theta_z * b_true  # τ(C) = θ_z ⋅ b(C)
 
     # Enforce observational paradox if needed
@@ -193,7 +242,7 @@ def simulate_fd_data_md(n: int = 5000, d: int = 10, seed: int = 123) -> SimData:
 # ============================
 @dataclass
 class NuisanceFold:
-    eX: XGBClassifier; q: XGBClassifier; m: XGBRegressor; mY: XGBRegressor; mZ: XGBClassifier; mC_lr: LinearRegression
+    eX: Any; q: Any; m: Any; mY: Any; mZ: Any; mC_lr: LinearRegression
 
 @dataclass
 class FoldData:
@@ -244,29 +293,26 @@ def simulate_fd_data_weak_overlap(n: int = 10000, d: int = 10, seed: int = 777,
     tau_true = theta_z * (q11 - q10)
 
     params = FDParams(beta0=beta0, beta_c=beta_c, beta_u=beta_u,
-                      alpha0=alpha0, alpha_c=alpha_c, alpha_x=alpha_x,
+                      alpha0=alpha0, alpha_c=alpha_c, alpha_x=alpha_x, alpha_u=0.0,
                       theta0=theta0, theta_c=theta_c, theta_z=theta_z, theta_u=theta_u)
     return SimData(C=C, X=X, Z=Z, Y=Y, tau_true=tau_true, params=params)
 
-def fit_nuisances_fold(C, X, Z, Y, train_idx, seed) -> NuisanceFold:
+def fit_nuisances_fold(C, X, Z, Y, train_idx, seed, learner: str = "xgb") -> NuisanceFold:
     """
     Fit nuisances on training fold only (cross-fitting).
     eX(C)=P(X=1|C), q(1|X,C)=P(Z=1|X,C), m(z,x,C)=E[Y|Z=z,X=x,C],
     mY(X,C)=E[Y|X,C], mZ(C)=P(Z=1|C) for FD-R’s b-stage residuals,
     mC_lr(C)=linear E[Y|C] baseline for *structural shrinkage* of m(z,x,C).
+    learner: 'xgb' (default) uses the existing gradient boosted trees,
+             'nn' fits an MLP with two hidden layers.
     """
     Ctr, Xtr, Ztr, Ytr = C[train_idx], X[train_idx], Z[train_idx], Y[train_idx]
-    eX = new_xgb_classifier(seed)
-    q  = new_xgb_classifier(seed+1)
-    # ---- Synthetic analysis ------
-    m  = new_xgb_regressor(seed+2)
-    mY = new_xgb_regressor(seed+3)
-    
-    # ---- Real analysis ------
-    # m  = new_xgb_classifier(seed+2) 
-    # mY = new_xgb_classifier(seed+3) 
-    
-    mZ = new_xgb_classifier(seed+4)
+    learner_id = _normalize_learner(learner)
+    eX = _classifier_factory(learner_id, _seed_plus(seed, 0))
+    q  = _classifier_factory(learner_id, _seed_plus(seed, 1))
+    m  = _regressor_factory(learner_id, _seed_plus(seed, 2))
+    mY = _regressor_factory(learner_id, _seed_plus(seed, 3))
+    mZ = _classifier_factory(learner_id, _seed_plus(seed, 4))
 
     eX.fit(Ctr, Xtr)
     q.fit(np.column_stack([Xtr, Ctr]), Ztr)
@@ -281,7 +327,6 @@ def fit_nuisances_fold(C, X, Z, Y, train_idx, seed) -> NuisanceFold:
     # stash the scaler on the model so we can reuse it at predict time
     mC_lr._muC = muC; mC_lr._sdC = sdC
     return NuisanceFold(eX,q,m,mY,mZ,mC_lr)
-
 
 
 # --- Structural nuisance degradation (shrink toward baselines) ---
@@ -446,13 +491,16 @@ def _ridge_solve(Xmat: np.ndarray, y: np.ndarray, alpha: float=1e-6) -> np.ndarr
         theta = np.linalg.pinv(XtX) @ Xty
     return theta
 
-def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int, g_solver: str="direct", swap_average: bool=True, ) -> np.ndarray:
+def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int,
+                               g_solver: str="direct", swap_average: bool=True,
+                               nuisance_learner: str = "xgb") -> np.ndarray:
     """
     FD-R with 3-way cross-fitting and ζ-regression (Eq. 35).
     - Splits data into (D1,D2,D3).
     - Fit nuisances on D1, fit (b,g) on D2 (using either 'direct' or 'ratio' solver for g),
       construct ζ on D3 and regress ζ ~ C to estimate γ(C). Return τ̂(C) = b̂(C)·γ̂(C).
     - If swap_average=True, swap D1 and D2 and average the two predictions on each D3 fold.
+    - nuisance_learner selects the nuisance model class ('xgb' or 'nn').
     """
     bound_y_low, bound_y_high = bounds_y if bounds_y is not None else (float('-inf'), float('inf'))
     bound_z_low, bound_z_high = bounds_z if bounds_z is not None else (float('-inf'), float('inf'))
@@ -474,7 +522,9 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int, g_sol
         preds = []
         for (D1,D2,D3) in (two_perms if swap_average else two_perms[:1]):
             # 1) Fit nuisances on D1
-            nuis = fit_nuisances_fold(C,X,Z,Y,train_idx=D1,seed=_seed_plus(seed, 10 + k_label))
+            nuis = fit_nuisances_fold(C,X,Z,Y,train_idx=D1,
+                                      seed=_seed_plus(seed, 10 + k_label),
+                                      learner=nuisance_learner)
             # 2) Learn b and g on D2
             c2, x2, z2, y2 = C[D2], X[D2], Z[D2], Y[D2]
             cache2 = nuisance_cache_on(nuis, c2, x2, delta, n, rng)
@@ -556,23 +606,29 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int, g_sol
 # ============================
 # Runner + statistics
 # ============================
-def fit_folds(C,X,Z,Y,seed: int) -> List[FoldData]:
-    """Make two cross‑fitting folds and fit nuisances on each training half."""
+def fit_folds(C,X,Z,Y,seed: int, learner: str = "xgb") -> List[FoldData]:
+    """Make two cross‑fitting folds and fit nuisances on each training half (XGB or NN)."""
     rng = np.random.default_rng(seed+99); i1, i2 = make_two_folds(len(X), rng)
-    f1 = FoldData(train_idx=i1, test_idx=i2, nuis=fit_nuisances_fold(C,X,Z,Y,i1,seed+1))
-    f2 = FoldData(train_idx=i2, test_idx=i1, nuis=fit_nuisances_fold(C,X,Z,Y,i2,seed+1000))
+    f1 = FoldData(train_idx=i1, test_idx=i2, nuis=fit_nuisances_fold(C,X,Z,Y,i1,seed+1, learner=learner))
+    f2 = FoldData(train_idx=i2, test_idx=i1, nuis=fit_nuisances_fold(C,X,Z,Y,i2,seed+1000, learner=learner))
     return [f1, f2]
 
 def rmse(a: np.ndarray, b: np.ndarray) -> float:
     """Root-mean-square error between τ̂(C) and τ(C)."""
     return float(np.sqrt(np.mean((a-b)**2)))
 
+def mse(a: np.ndarray, b: np.ndarray) -> float:
+    """Mean-squared error between τ̂(C) and τ(C)."""
+    return float(np.mean((a-b)**2))
+
 def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = "rate",
-              base_seed: int = 2025, verbose: bool = False, bound_z=None, bound_y=None) -> Tuple[np.ndarray,np.ndarray,np.ndarray]:
+              base_seed: int = 2025, verbose: bool = False, bound_z=None, bound_y=None,
+              nuisance_learner: str = "xgb") -> Tuple[np.ndarray,np.ndarray,np.ndarray]:
     """
     R replications at fixed (n,d). Structural shrinkage δ:
       • if mode=="rate": δ = noise_coeff * n^{-1/4}  (rate-style noise),
       • else (mode=="abs"): δ = noise_coeff         (absolute misspecification).
+    nuisance_learner chooses the nuisance model family ('xgb' or 'nn').
     """
     bound_y_low, bound_y_high = bound_y if bound_y is not None else (float('-inf'), float('inf'))
     bound_z_low, bound_z_high = bound_z if bound_z is not None else (float('-inf'), float('inf'))
@@ -585,12 +641,17 @@ def run_one_n(n: int, d: int, R: int = 4, noise_coeff: float = 0.0, mode: str = 
         if verbose and r==0:
             do = tau_true.mean(); obs = Y[X==1].mean()-Y[X==0].mean()
             print(f"n={n}, mode={mode}, noise_coeff={noise_coeff}: do-diff={do:.3f}, obs-diff={obs:.3f}")
-        folds = fit_folds(C,X,Z,Y,seed)
-        delta = noise_coeff
+        folds = fit_folds(C,X,Z,Y,seed, learner=nuisance_learner)
+        if mode == "rate":
+            delta = noise_coeff * (n ** -0.25)
+        else:
+            delta = noise_coeff
         
         tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,bound_y, bound_z,seed+10)
         tau_dr, _    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+20)
-        tau_r, _     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+40,g_solver="direct",swap_average=True)        
+        tau_r, _     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+40,
+                                                  g_solver="direct",swap_average=True,
+                                                  nuisance_learner=nuisance_learner)        
         
         rms_naive.append(rmse(tau_naive, tau_true))
         rms_dr.append(rmse(tau_dr, tau_true))
@@ -607,33 +668,49 @@ def mean_ci(vals: np.ndarray) -> Tuple[float,float]:
 # ============================
 # Three simulations FIRST (no plotting here)
 # ============================
-def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n, fixed_n, mode, bound_z, bound_y):
+def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n, fixed_n,
+                          mode, bound_z, bound_y, nuisance_learner: str = "xgb",
+                          progress=None):
     """
-    Sim‑1: δ=0 across n-grid (no structural error).
-    Sim‑2: δ=noise_abs_for_n across n-grid (moderate misspecification).
-    Sim‑3: fixed n; sweep δ over noise_grid_for_fixed_n.
-    Returns DataFrames with mean±CI per method.
+    Sim-1: δ=0 across n-grid (no structural error).
+    Sim-2: δ=noise_abs_for_n across n-grid (moderate misspecification).
+    Sim-3: fixed n; sweep δ over noise_grid_for_fixed_n.
+    Returns DataFrames with mean±CI per method. `nuisance_learner` picks 'xgb' or 'nn'.
     """
     # --- Sim‑1
     rows = []
-    for n in ns_list:
-        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060, verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y)
+    total_ns = len(ns_list)
+    for idx, n in enumerate(ns_list):
+        if progress:
+            progress("Sim-1", idx+1, total_ns, f"n={n}")
+        rn, rd, rr = run_one_n(n, d, R=R, noise_coeff=0.0, mode=mode, base_seed=6060,
+                               verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y,
+                               nuisance_learner=nuisance_learner)
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((n,mN,hN,mD,hD,mR,hR))
     tab_n0 = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
 
     # --- Sim‑2
     rows = []
-    for n in ns_list:
-        rn, rd, rr  = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070, verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y)
+    for idx, n in enumerate(ns_list):
+        if progress:
+            progress("Sim-2", idx+1, total_ns, f"n={n}")
+        rn, rd, rr  = run_one_n(n, d, R=R, noise_coeff=noise_abs_for_n, mode=mode, base_seed=7070,
+                                verbose=(n==ns_list[0]), bound_z=bound_z, bound_y=bound_y,
+                                nuisance_learner=nuisance_learner)
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((n,mN,hN,mD,hD,mR,hR))
     tab_nh = pd.DataFrame(rows, columns=["n","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
 
     # --- Sim‑3
     rows = []
-    for coeff in noise_grid_for_fixed_n:
-        rn, rd, rr = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080, verbose=(coeff==noise_grid_for_fixed_n[0]), bound_z=bound_z, bound_y=bound_y)
+    total_coeff = len(noise_grid_for_fixed_n)
+    for idx, coeff in enumerate(noise_grid_for_fixed_n):
+        if progress:
+            progress("Sim-3", idx+1, total_coeff, f"delta={coeff}")
+        rn, rd, rr = run_one_n(fixed_n, d, R=R, noise_coeff=coeff, mode=mode, base_seed=8080,
+                               verbose=(coeff==noise_grid_for_fixed_n[0]), bound_z=bound_z,
+                               bound_y=bound_y, nuisance_learner=nuisance_learner)
         mN,hN = mean_ci(rn); mD,hD = mean_ci(rd); mR,hR = mean_ci(rr)
         rows.append((coeff,mN,hN,mD,hD,mR,hR))
     tab_noise = pd.DataFrame(rows, columns=["delta","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
@@ -686,23 +763,30 @@ def plot_rmse_vs_delta_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig:
 # ============================
 
 def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float],
-                                base_seed: int = 8080, bound_z=None, bound_y=None) -> pd.DataFrame:
+                                base_seed: int = 8080, bound_z=None, bound_y=None,
+                                nuisance_learner: str = "xgb", progress=None) -> pd.DataFrame:
     """
-    Sim‑4: Weak overlap — fixed n, vary severity via slope multiplier kappa_e.
+    Sim-4: Weak overlap — fixed n, vary severity via slope multiplier kappa_e.
     For each kappa_e, run R replications and report RMSE mean ± 95% CI.
+    nuisance_learner picks the nuisance model family ('xgb' or 'nn').
     """
     rows = []
-    for kappa_e in kappa_e_grid:
+    total = len(kappa_e_grid)
+    for idx, kappa_e in enumerate(kappa_e_grid):
+        if progress:
+            progress("Sim-4", idx+1, total, f"kappa_e={kappa_e}")
         rms_naive=[]; rms_dr=[]; rms_r=[]; rms_r3=[]; rms_cfd=[]
         for r in range(R):
             seed = base_seed + 97*r + int(10*kappa_e) + n
             data = simulate_fd_data_weak_overlap(n=n, d=d, seed=seed, kappa_e=kappa_e, kappa_q=kappa_e)
             C,X,Z,Y,tau_true = data.C, data.X, data.Z, data.Y, data.tau_true
-            folds = fit_folds(C,X,Z,Y,seed)
+            folds = fit_folds(C,X,Z,Y,seed, learner=nuisance_learner)
             delta = 0.0  # no structural shrinkage in this sim; challenge is weak overlap only
             tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+10)
             tau_dr, _    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+20)
-            tau_r, _    = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+40,g_solver="direct",swap_average=True)
+            tau_r, _    = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+40,
+                                                     g_solver="direct",swap_average=True,
+                                                     nuisance_learner=nuisance_learner)
             # tau_cfd, _ = tau_cfd_minimal_oof(C, X, Z, Y, folds, delta, bound_y, bound_z, seed+40)
             
             rms_naive.append(rmse(tau_naive, tau_true))
@@ -713,6 +797,38 @@ def run_weak_overlap_simulation(n: int, d: int, R: int, kappa_e_grid: List[float
         mN,hN = mean_ci(np.array(rms_naive)); mD,hD = mean_ci(np.array(rms_dr)); mR,hR = mean_ci(np.array(rms_r))
         rows.append((kappa_e,mN,hN,mD,hD,mR,hR))
     tab = pd.DataFrame(rows, columns=["kappa_e","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
+    return tab
+
+def run_mediator_confounding_simulation(n: int, d: int, R: int, confound_grid: List[float],
+                                        base_seed: int = 5050, bound_z=None, bound_y=None,
+                                        nuisance_learner: str = "xgb", progress=None) -> pd.DataFrame:
+    """
+    Sim-5: Break the mediator no-unmeasured-confounding assumption by adding latent
+    U→Z dependence with strength set by `confound_grid`. Reports MSE mean±CI.
+    """
+    rows = []
+    total = len(confound_grid)
+    for idx, strength in enumerate(confound_grid):
+        if progress:
+            progress("Sim-5", idx+1, total, f"confound={strength}")
+        mse_naive=[]; mse_dr=[]; mse_r=[]
+        for r in range(R):
+            seed = base_seed + 83*r + int(100*strength) + n
+            data = simulate_fd_data_md(n=n, d=d, seed=seed, mediator_confound=strength)
+            C,X,Z,Y,tau_true = data.C, data.X, data.Z, data.Y, data.tau_true
+            folds = fit_folds(C,X,Z,Y,seed, learner=nuisance_learner)
+            delta = 0.0
+            tau_naive = tau_naive_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+10)
+            tau_dr, _    = tau_fd_dr_oof(C,X,Z,Y,folds,delta,bound_y,bound_z,seed+20)
+            tau_r, _     = tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bound_y,bound_z,seed+40,
+                                                      g_solver="direct",swap_average=True,
+                                                      nuisance_learner=nuisance_learner)
+            mse_naive.append(mse(tau_naive, tau_true))
+            mse_dr.append(mse(tau_dr, tau_true))
+            mse_r.append(mse(tau_r, tau_true))
+        mN,hN = mean_ci(np.array(mse_naive)); mD,hD = mean_ci(np.array(mse_dr)); mR,hR = mean_ci(np.array(mse_r))
+        rows.append((strength,mN,hN,mD,hD,mR,hR))
+    tab = pd.DataFrame(rows, columns=["confound_strength","Naive_mean","Naive_hw","FDDR_mean","FDDR_hw","FDR_mean","FDR_hw"])
     return tab
 
 def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig: str, VERSION_SAVE: str):
@@ -735,78 +851,261 @@ def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fi
     plt.savefig(out_dir_fig + f"vs_overlap_violation_at_n{n_for_title}_{VERSION_SAVE}.pdf")
     plt.show()
 
+def plot_mse_vs_mediator_confound_with_ci(tab: pd.DataFrame, n_for_title: int,
+                                          out_dir_fig: str, VERSION_SAVE: str):
+    """Plot MSE vs mediator-confounding strength with mean ± 95% CI error bars."""
+    x = tab["confound_strength"].values
+    plt.figure()
+    plt.errorbar(x, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4,
+                 label="Naive FD", color=COLOR_NAIVE)
+    plt.errorbar(x, tab["FDDR_mean"],  yerr=tab["FDDR_hw"],  marker='s', linewidth=2.5, capsize=4,
+                 label="FD-DR",   color=COLOR_FDDR)
+    plt.errorbar(x, tab["FDR_mean"],   yerr=tab["FDR_hw"],   marker='^', linewidth=2.5, capsize=4,
+                 label="FD-R",    color=COLOR_FDR)
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
+    plt.grid(False)
+    plt.tight_layout()
+    plt.savefig(out_dir_fig + f"vs_mediator_confounding_at_n{n_for_title}_{VERSION_SAVE}.pdf")
+    plt.show()
+
 # ============================
-# Execute: run 3 simulations first, then draw plots
+# CLI helpers
 # ============================
-if __name__ == "__main__":
-    # (Smaller grid for responsiveness here; increase for paper‑grade results.)
-    NS = [1000, 2500, 5000, 10000, 20000, 50000]
-    DIM = 10
-    ROUNDS = 5
-    DELTA_ABS_FOR_N = 0.5
-    DELTA_GRID_FIXED_N = [0.0, 0.15, 0.3, 0.45, 0.6, 0.85, 1.0]
-    FIXED_N_FOR_SWEEP = 5000
-    MODE = "rate" # "abs" or "rate"
-    VERSION_SAVE = "260924_1800_final"   
-    BOUND_Z = [0,1] 
-    BOUND_Y = None
+
+class ProgressPrinter:
+    """Lightweight helper to stream progress updates."""
+    def __init__(self, enabled: bool = True):
+        self.enabled = enabled
+
+    def log(self, message: str):
+        if self.enabled:
+            print(message, flush=True)
+
+    def __call__(self, stage: str, index: int, total: int, detail: str = ""):
+        if not self.enabled or total <= 0:
+            return
+        pct = (index / total) * 100.0
+        detail_str = f" | {detail}" if detail else ""
+        print(f"[{stage}] {index}/{total} ({pct:5.1f}%)" + detail_str, flush=True)
+
+
+def parse_cli_args():
+    parser = argparse.ArgumentParser(
+        description="Run FD-CATE simulations and optional plotting from the command line."
+    )
+    parser.add_argument(
+        "--ns", type=int, nargs="+",
+        default=[1000, 2500, 5000, 10000, 20000, 50000],
+        metavar="N",
+        help="Sample-size grid for Sim-1 and Sim-2 (default: %(default)s)."
+    )
+    parser.add_argument("--dim", type=int, default=10, help="Number of observed covariates d.")
+    parser.add_argument("--rounds", type=int, default=5, help="Monte-Carlo replications per grid point.")
+    parser.add_argument(
+        "--delta-abs-for-n", type=float, default=2.0,
+        help="Structural noise level for Sim-2 (δ applied equally across n)."
+    )
+    parser.add_argument(
+        "--delta-grid-fixed-n", type=float, nargs="+", metavar="DELTA",
+        default=[0.0, 2.0, 5.0, 10.0],
+        help="Grid of δ values for Sim-3 at fixed n (default: %(default)s)."
+    )
+    parser.add_argument(
+        "--fixed-n-for-sweep", type=int, default=10000,
+        help="Sample size used for Sim-3 and mediator-confounding sweeps."
+    )
+    parser.add_argument(
+        "--mode", choices=["abs", "rate"], default="rate",
+        help="Treat δ as absolute ('abs') or rate-scaled ('rate')."
+    )
+    parser.add_argument(
+        "--version-save", type=str, default="261115_1100",
+        help="Tag appended to saved artifacts."
+    )
+    parser.add_argument(
+        "--bound-z", type=float, nargs=2, metavar=("LOW", "HIGH"),
+        default=[0.0, 1.0],
+        help="Bounds for mediator predictions (default: %(default)s)."
+    )
+    parser.add_argument(
+        "--bound-y", type=float, nargs=2, metavar=("LOW", "HIGH"),
+        default=None,
+        help="Optional bounds for outcome predictions."
+    )
+    parser.add_argument(
+        "--nuisance-learner", choices=["xgb", "nn"], default="xgb",
+        help="Nuisance model family."
+    )
+    parser.add_argument(
+        "--mediator-confound-grid", type=float, nargs="+", metavar="G",
+        default=[0.0, 0.5, 1.0, 1.5, 2.0],
+        help="Mediator-confounding strengths for Sim-5."
+    )
+    parser.add_argument(
+        "--severity-grid", type=float, nargs="+", metavar="K",
+        default=[2.0, 4.0, 6.0, 8.0, 10.0],
+        help="Weak-overlap severity grid κ_e for Sim-4."
+    )
+    parser.add_argument(
+        "--fixed-n-weak", type=int, default=None,
+        help="Optional override for the weak-overlap sample size (defaults to --fixed-n-for-sweep)."
+    )
+    parser.add_argument(
+        "--out-dir", type=str, default="simulation/pkl/",
+        help="Directory used for pickle artifacts."
+    )
+    parser.add_argument(
+        "--fig-dir", type=str, default="simulation/plot/",
+        help="Directory used for plots."
+    )
+    parser.add_argument(
+        "--skip-weak-overlap", action="store_true",
+        help="Skip the weak-overlap simulation (Sim-4)."
+    )
+    parser.add_argument(
+        "--skip-mediator-confound", action="store_true",
+        help="Skip the mediator-confounding simulation (Sim-5)."
+    )
+    parser.add_argument(
+        "--no-save", action="store_true",
+        help="Disable writing pickle artifacts."
+    )
+    parser.add_argument(
+        "--no-plots", action="store_true",
+        help="Disable plotting."
+    )
+    parser.add_argument(
+        "--quiet", action="store_true",
+        help="Suppress DataFrame printouts."
+    )
+    return parser.parse_args()
+
+
+def run_from_args(args):
+    bound_z = list(args.bound_z) if args.bound_z is not None else None
+    bound_y = list(args.bound_y) if args.bound_y is not None else None
+    ns_list = list(args.ns)
+    delta_grid = list(args.delta_grid_fixed_n)
+    mediator_confound_grid = list(args.mediator_confound_grid)
+    severity_grid = list(args.severity_grid)
+    fixed_n_weak = args.fixed_n_weak if args.fixed_n_weak is not None else args.fixed_n_for_sweep
+    progress = ProgressPrinter(enabled=not args.quiet)
+    progress.log("Starting FD-CATE simulations...")
 
     # --- Run simulations (no plotting yet) ---
+    progress.log("Running Sim-1 to Sim-3 sweeps.")
     tab_n0, tab_nh, tab_noise = run_three_simulations(
-        NS, DIM, ROUNDS, DELTA_ABS_FOR_N, DELTA_GRID_FIXED_N, FIXED_N_FOR_SWEEP, MODE, BOUND_Z, BOUND_Y
+        ns_list, args.dim, args.rounds, args.delta_abs_for_n, delta_grid,
+        args.fixed_n_for_sweep, args.mode, bound_z, bound_y,
+        nuisance_learner=args.nuisance_learner,
+        progress=progress
     )
-    
-    # --- Sim‑4: Weak Overlap (new) ---
-    SEVERITY_GRID = [2.0, 4.0, 6.0, 8.0, 10.0]  # κ_e multipliers
-    FIXED_N_WEAK = FIXED_N_FOR_SWEEP  # reuse same n as Sim‑3 unless changed above
-    tab_weak = run_weak_overlap_simulation(FIXED_N_WEAK, DIM, ROUNDS, SEVERITY_GRID, base_seed=9090)
-    print(tab_weak)
-    
-    # ---- SAVE ---- 
-    config = {
-        "NS": NS,
-        "DIM": DIM,
-        "ROUNDS": ROUNDS,
-        "DELTA_ABS_FOR_N": DELTA_ABS_FOR_N,  # (note: ABS; not BAS)
-        "DELTA_GRID_FIXED_N": DELTA_GRID_FIXED_N,
-        "FIXED_N_FOR_SWEEP": FIXED_N_FOR_SWEEP,
-        "FIXED_N_WEAK": FIXED_N_WEAK,
-        "MODE": MODE,
-        "VERSION_SAVE": VERSION_SAVE,
-    }
-    
+    progress.log("Completed Sim-1 to Sim-3.")
+
+    tab_weak = None
+    if not args.skip_weak_overlap:
+        progress.log("Running Sim-4 (weak overlap).")
+        tab_weak = run_weak_overlap_simulation(
+            fixed_n_weak, args.dim, args.rounds, severity_grid,
+            base_seed=9090, bound_z=bound_z, bound_y=bound_y,
+            nuisance_learner=args.nuisance_learner,
+            progress=progress
+        )
+        progress.log("Completed Sim-4 (weak overlap).")
+    else:
+        progress.log("Skipping Sim-4 (weak overlap).")
+
+    tab_conf = None
+    if not args.skip_mediator_confound:
+        progress.log("Running Sim-5 (mediator confounding).")
+        tab_conf = run_mediator_confounding_simulation(
+            args.fixed_n_for_sweep, args.dim, args.rounds, mediator_confound_grid,
+            base_seed=7071, bound_z=bound_z, bound_y=bound_y,
+            nuisance_learner=args.nuisance_learner,
+            progress=progress
+        )
+        progress.log("Completed Sim-5 (mediator confounding).")
+    else:
+        progress.log("Skipping Sim-5 (mediator confounding).")
+
     results = {
-        "tab_n0": tab_n0, 
+        "tab_n0": tab_n0,
         "tab_nh": tab_nh,
         "tab_noise": tab_noise,
-        "tab_weak": tab_weak
     }
-    
-    # Bundle everything into one dictionary
-    bundle = {
-        "config": config,
-        "results": results,
+    if tab_weak is not None:
+        results["tab_weak"] = tab_weak
+    if tab_conf is not None:
+        results["tab_conf"] = tab_conf
+
+    config = {
+        "NS": ns_list,
+        "DIM": args.dim,
+        "ROUNDS": args.rounds,
+        "DELTA_ABS_FOR_N": args.delta_abs_for_n,
+        "DELTA_GRID_FIXED_N": delta_grid,
+        "FIXED_N_FOR_SWEEP": args.fixed_n_for_sweep,
+        "FIXED_N_WEAK": fixed_n_weak,
+        "MODE": args.mode,
+        "VERSION_SAVE": args.version_save,
+        "NUISANCE_LEARNER": args.nuisance_learner,
+        "MEDIATOR_CONFOUND_GRID": mediator_confound_grid,
+        "SEVERITY_GRID": severity_grid,
+        "BOUND_Z": bound_z,
+        "BOUND_Y": bound_y,
     }
-    
-    # Ensure the target folder exists
-    out_dir = "simulation/pkl/"
-    out_dir_fig = "simulation/plot/"
-    os.makedirs(out_dir, exist_ok=True)
-    
-    # Path based on VERSION_SAVE
-    pkl_path = os.path.join(out_dir, f"simulation_{VERSION_SAVE}.pkl")
-    
-    # Save as pickle
-    with open(pkl_path, "wb") as f:
-        pickle.dump(bundle, f, protocol=pickle.HIGHEST_PROTOCOL)    
+    bundle = {"config": config, "results": results}
 
-    # --- Draw plots only after all sims complete ---
-    plot_rmse_vs_n_with_ci(tab_n0,  "no_noise", out_dir_fig, VERSION_SAVE)
-    plot_rmse_vs_n_with_ci(tab_nh,  f"structural_noise_{DELTA_ABS_FOR_N}",out_dir_fig, VERSION_SAVE)
-    plot_rmse_vs_delta_with_ci(tab_noise, FIXED_N_FOR_SWEEP, out_dir_fig, VERSION_SAVE)
-    plot_rmse_vs_overlap_with_ci(tab_weak, FIXED_N_WEAK, out_dir_fig, VERSION_SAVE)
+    saving_enabled = not args.no_save
+    plots_enabled = not args.no_plots
+    if saving_enabled:
+        progress.log(f"Saving results to {args.out_dir}")
+        os.makedirs(args.out_dir, exist_ok=True)
+        pkl_path = os.path.join(args.out_dir, f"simulation_{args.version_save}.pkl")
+        with open(pkl_path, "wb") as f:
+            pickle.dump(bundle, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # Optional: print the numeric summaries (means ± CI half‑widths)
-    print(tab_n0); print(tab_nh); print(tab_noise)
-    
-    
+    if plots_enabled:
+        progress.log(f"Rendering plots to {args.fig_dir}")
+        os.makedirs(args.fig_dir, exist_ok=True)
+        plot_rmse_vs_n_with_ci(tab_n0, "no_noise", args.fig_dir, args.version_save)
+        plot_rmse_vs_n_with_ci(
+            tab_nh, f"structural_noise_{args.delta_abs_for_n}",
+            args.fig_dir, args.version_save
+        )
+        plot_rmse_vs_delta_with_ci(
+            tab_noise, args.fixed_n_for_sweep, args.fig_dir, args.version_save
+        )
+        if tab_weak is not None:
+            plot_rmse_vs_overlap_with_ci(
+                tab_weak, fixed_n_weak, args.fig_dir, args.version_save
+            )
+        if tab_conf is not None:
+            plot_mse_vs_mediator_confound_with_ci(
+                tab_conf, args.fixed_n_for_sweep, args.fig_dir, args.version_save
+            )
+    progress.log("All tasks completed.")
+
+    if not args.quiet:
+        print("Sim-1 (delta=0) results:")
+        print(tab_n0)
+        print("Sim-2 (structural noise) results:")
+        print(tab_nh)
+        print("Sim-3 (delta sweep) results:")
+        print(tab_noise)
+        if tab_weak is not None:
+            print("Sim-4 (weak overlap) results:")
+            print(tab_weak)
+        if tab_conf is not None:
+            print("Sim-5 (mediator confounding) results:")
+            print(tab_conf)
+
+
+def main():
+    args = parse_cli_args()
+    run_from_args(args)
+
+
+if __name__ == "__main__":
+    main()

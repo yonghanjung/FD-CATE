@@ -38,9 +38,23 @@ python -m pip install numpy pandas scikit-learn xgboost statsmodels matplotlib s
 
 ### 2) Reproduce synthetic experiments (Figure 2)
 
-Run:
+Inspect the CLI and run with defaults:
 ```bash
+python FDCATE.py --help
 python FDCATE.py
+```
+
+You'll see live progress indicators for each simulation block; pass `--quiet` if you prefer a silent run.
+
+Examples:
+```bash
+# Smaller grid, skip optional sims, and avoid saving artifacts.
+python FDCATE.py \
+  --ns 1000 2500 \
+  --delta-grid-fixed-n 0 2 \
+  --rounds 2 \
+  --no-save --no-plots \
+  --skip-weak-overlap --skip-mediator-confound
 ```
 
 What it does:
