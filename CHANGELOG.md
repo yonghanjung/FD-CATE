@@ -10,4 +10,5 @@
 - Add benchmark golden regression test (`tests/test_benchmark_golden.py`).
 - Add benchmark golden reference artifact (`tests/benchmark_quick_reference.json`).
 - Add live demo helper script (`scripts/run_demo_quick.sh`) and README results snapshot table.
+- Add SVG benchmark plot (`benchmark_quick_rmse.svg`) and README live-demo output preview.
 - Add test suite and GitHub Actions CI/release workflows.

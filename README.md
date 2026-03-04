@@ -96,6 +96,21 @@ fdcate fit --data /tmp/fdcate_live_demo/synthetic.csv --outcome y --treat t --me
 fdcate benchmark --n 60 --d 4 --seed 17 --nuisance-learner xgb --out /tmp/fdcate_live_demo/benchmark_quick.json
 ```
 
+Example terminal output preview:
+
+```text
+[demo] output directory: /tmp/fdcate_live_demo
+[demo] 1) synthetic data
+Saved synthetic dataset to: /tmp/fdcate_live_demo/synthetic.csv
+[demo] 2) fit model + artifact contract
+ATE=0.540874
+Saved artifacts to: /tmp/fdcate_live_demo/fit_out
+[demo] 3) effects from saved model
+Saved effects to: /tmp/fdcate_live_demo/effects_from_model.csv
+[demo] 4) quick benchmark
+Saved benchmark report to: /tmp/fdcate_live_demo/benchmark_quick.json
+```
+
 ## Experiment Results Snapshot (Quick Benchmark, XGB)
 
 Configuration:
@@ -112,6 +127,10 @@ RMSE snapshot:
 
 Reference source:
 - `tests/benchmark_quick_reference.json`
+
+Quick benchmark RMSE plot:
+
+![FD-CATE quick benchmark RMSE](benchmark_quick_rmse.svg)
 
 ## Model Compatibility Policy (`model.pkl`)
 
