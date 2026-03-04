@@ -1,24 +1,33 @@
-cat > .gitignore << 'EOF'
+# Byte-compiled / cache
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtualenv
+# Virtual environments
 .venv/
 venv/
 env/
 
-# Jupyter
-.ipynb_checkpoints
-
-# IDE/OS
+# IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
-# Data & experiment outputs
-# data/
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Build / packaging
+*.egg-info/
+build/
+dist/
+*.egg
+
+# Test / tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Generated outputs
 results/
 outputs/
 artifacts/
@@ -27,29 +36,13 @@ checkpoints/
 models/
 figures/
 plots/
-
-# Backup data 
-backup/
-
-# Generated artifacts
-*.png
-*.jpg
-*.jpeg
-*.pdf
-*.svg
-
-# Packaging/build
-*.egg-info/
-dist/
-build/
 simulation/
-# data/
-*.egg
+
+# Binary artifacts
 *.pkl
-EOF
+*.npz
 *.xpt
 *.dat
-*.npz
-# *.csv
-Stata_ReadInProgramAllSurveys.do
-simulation_log.txt
+
+# Local backups
+backup/

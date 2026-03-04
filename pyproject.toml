@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fd-cate"
+version = "0.1.0"
+description = "Front-door CATE/ATE estimation toolkit with debiased learners."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Yonghan Jung" }
+]
+keywords = ["causal-inference", "front-door", "cate", "ate", "heterogeneous-treatment-effect"]
+dependencies = [
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "joblib",
+  "xgboost",
+]
+
+[project.optional-dependencies]
+nn = []
+docs = [
+  "mkdocs-material",
+  "mkdocstrings[python]",
+]
+viz = [
+  "matplotlib",
+  "shap",
+]
+dev = [
+  "pytest",
+  "ruff",
+  "pre-commit",
+  "build",
+  "twine",
+]
+
+[project.scripts]
+fdcate = "fd_cate.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["FDCATE", "analyze_fars_2000_fd"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fd_cate", "fd_cate.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
