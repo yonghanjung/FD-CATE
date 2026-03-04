@@ -31,3 +31,17 @@ jobs:
         run: |
           python -m pip install dist/*.whl
           fdcate --help
+
+      - name: CLI fit smoke
+        run: |
+          mkdir -p /tmp/fdcate-ci
+          fdcate synthetic --n 80 --d 5 --seed 0 --out /tmp/fdcate-ci/synth.csv
+          fdcate fit \
+            --data /tmp/fdcate-ci/synth.csv \
+            --outcome y --treat t --med m \
+            --outdir /tmp/fdcate-ci/out \
+            --method fd-pi --nuisance-learner xgb
+          test -f /tmp/fdcate-ci/out/model.pkl
+          test -f /tmp/fdcate-ci/out/results.json
+          test -f /tmp/fdcate-ci/out/diagnostics.json
+          test -f /tmp/fdcate-ci/out/effects.csv
