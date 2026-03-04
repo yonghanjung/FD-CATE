@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .artifacts import write_artifacts
+from .benchmark import run_quick_benchmark, save_benchmark_report
 from .diagnostics import compute_diagnostics
 from .estimator import FDCATE
 from .io import from_dataframe
@@ -133,6 +134,21 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_benchmark(args: argparse.Namespace) -> int:
+    report = run_quick_benchmark(
+        n=args.n,
+        d=args.d,
+        seed=args.seed,
+        learner=args.nuisance_learner,
+    )
+    print(json.dumps(report["results"], indent=2))
+
+    if args.out:
+        out_path = save_benchmark_report(report, args.out)
+        print(f"Saved benchmark report to: {out_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fdcate", description="FD-CATE command line interface")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -186,6 +202,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_syn.add_argument("--seed", type=int, default=42)
     p_syn.add_argument("--out", default="synthetic.csv")
     p_syn.set_defaults(func=cmd_synthetic)
+
+    p_bench = sub.add_parser("benchmark", help="run quick deterministic benchmark")
+    p_bench.add_argument("--n", type=int, default=120)
+    p_bench.add_argument("--d", type=int, default=6)
+    p_bench.add_argument("--seed", type=int, default=2026)
+    p_bench.add_argument("--nuisance-learner", default="xgb", choices=["xgb", "nn"])
+    p_bench.add_argument(
+        "--out",
+        default="results/benchmark_quick.json",
+        help="Output path for benchmark JSON report. Set empty string to skip saving.",
+    )
+    p_bench.set_defaults(func=cmd_benchmark)
 
     return parser
 

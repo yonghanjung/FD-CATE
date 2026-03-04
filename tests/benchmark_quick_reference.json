@@ -1,0 +1,32 @@
+{
+  "schema_name": "fdcate.benchmark.golden",
+  "schema_version": 0,
+  "config": {
+    "profile": "quick",
+    "n": 60,
+    "d": 4,
+    "seed": 17,
+    "learner": "xgb",
+    "scenarios": [
+      "clean",
+      "weak-overlap"
+    ]
+  },
+  "results": {
+    "clean": {
+      "fd-pi_rmse": 0.3343838991258924,
+      "fd-dr_rmse": 0.33018277516343747,
+      "fd-r_rmse": 0.7864028340405073
+    },
+    "weak-overlap": {
+      "fd-pi_rmse": 0.24903248490015029,
+      "fd-dr_rmse": 0.5095928757145979,
+      "fd-r_rmse": 0.8794377758380472
+    },
+    "aggregate_mean_rmse": {
+      "fd-pi": 0.29170819201302134,
+      "fd-dr": 0.4198878254390177,
+      "fd-r": 0.8329203049392773
+    }
+  }
+}

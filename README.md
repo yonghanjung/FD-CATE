@@ -55,6 +55,64 @@ Standard artifacts under `out/`:
 - `effects.csv`
 - `model.pkl`
 
+## Benchmark (Quick Profile + Golden Regression)
+
+`fd-cate` now includes a deterministic quick benchmark profile for regression checks.
+
+```bash
+fdcate benchmark --n 120 --d 6 --seed 2026 --nuisance-learner xgb --out results/benchmark_quick.json
+```
+
+Output schema (`fdcate.benchmark`, `schema_version=0`) contains:
+- `clean` RMSE for `fd-pi`, `fd-dr`, `fd-r`
+- `weak-overlap` RMSE for `fd-pi`, `fd-dr`, `fd-r`
+- `aggregate_mean_rmse` across the two scenarios
+
+CI also runs a golden snapshot regression test:
+- `tests/test_benchmark_golden.py`
+- golden reference file: `tests/benchmark_quick_reference.json`
+
+## Live Demo (Toy + Benchmark)
+
+Run the end-to-end live demo (synthetic fit/effect + benchmark):
+
+```bash
+bash scripts/run_demo_quick.sh
+```
+
+The demo writes:
+- `/tmp/fdcate_live_demo/fit_out/summary.txt`
+- `/tmp/fdcate_live_demo/fit_out/results.json`
+- `/tmp/fdcate_live_demo/fit_out/diagnostics.json`
+- `/tmp/fdcate_live_demo/fit_out/effects.csv`
+- `/tmp/fdcate_live_demo/fit_out/model.pkl`
+- `/tmp/fdcate_live_demo/benchmark_quick.json`
+
+Manual one-liners:
+
+```bash
+fdcate synthetic --n 120 --d 6 --seed 2026 --out /tmp/fdcate_live_demo/synthetic.csv
+fdcate fit --data /tmp/fdcate_live_demo/synthetic.csv --outcome y --treat t --med m --method fd-dr --nuisance-learner xgb --outdir /tmp/fdcate_live_demo/fit_out
+fdcate benchmark --n 60 --d 4 --seed 17 --nuisance-learner xgb --out /tmp/fdcate_live_demo/benchmark_quick.json
+```
+
+## Experiment Results Snapshot (Quick Benchmark, XGB)
+
+Configuration:
+- `n=60`, `d=4`, `seed=17`, `learner=xgb`
+- scenarios: `clean`, `weak-overlap`
+
+RMSE snapshot:
+
+| Scenario | FD-PI | FD-DR | FD-R |
+|---|---:|---:|---:|
+| clean | 0.3344 | 0.3302 | 0.7864 |
+| weak-overlap | 0.2490 | 0.5096 | 0.8794 |
+| aggregate mean | 0.2917 | 0.4199 | 0.8329 |
+
+Reference source:
+- `tests/benchmark_quick_reference.json`
+
 ## Model Compatibility Policy (`model.pkl`)
 
 `model.pkl` loading is allowed only when **major.minor** package versions match.
