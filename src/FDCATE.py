@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Any, List, Literal, Tuple, cast
 from xgboost import XGBClassifier, XGBRegressor
@@ -14,6 +13,20 @@ import pickle
 import argparse
 
 import warnings
+
+try:
+    import matplotlib.pyplot as plt
+except ModuleNotFoundError:
+    plt = None
+
+
+def _require_matplotlib() -> None:
+    if plt is None:
+        raise ImportError(
+            "matplotlib is required for plotting. "
+            "Install matplotlib (or fd-cate[viz]) or run with --no-plots."
+        )
+
 
 # Silence every warning for smoother CLI use (safe for research scripts).
 warnings.filterwarnings("ignore")
@@ -733,6 +746,7 @@ def run_three_simulations(ns_list, d, R, noise_abs_for_n, noise_grid_for_fixed_n
 # ============================
 def plot_rmse_vs_n_with_ci(tab: pd.DataFrame, title: str, out_dir_fig: str, VERSION_SAVE: str):
     """Plot RMSE vs n with mean ± 95% CI error bars for each method."""
+    _require_matplotlib()
     n = tab["n"].values
     plt.figure()
     plt.errorbar(n, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
@@ -752,6 +766,7 @@ def plot_rmse_vs_n_with_ci(tab: pd.DataFrame, title: str, out_dir_fig: str, VERS
 
 def plot_rmse_vs_delta_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig: str, VERSION_SAVE: str):
     """Plot RMSE vs structural noise δ (fixed n) with mean ± 95% CI error bars."""
+    _require_matplotlib()
     dlt = tab["delta"].values
     plt.figure()
     plt.errorbar(dlt, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
@@ -849,6 +864,7 @@ def run_mediator_confounding_simulation(n: int, d: int, R: int, confound_grid: L
 
 def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fig: str, VERSION_SAVE: str):
     """Plot RMSE vs weak-overlap severity κ_e (fixed n) with mean ± 95% CI error bars."""
+    _require_matplotlib()
     x = tab["kappa_e"].values
     plt.figure()
     plt.errorbar(x, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4, label="Naive FD", color=COLOR_NAIVE)
@@ -870,6 +886,7 @@ def plot_rmse_vs_overlap_with_ci(tab: pd.DataFrame, n_for_title: int, out_dir_fi
 def plot_mse_vs_mediator_confound_with_ci(tab: pd.DataFrame, n_for_title: int,
                                           out_dir_fig: str, VERSION_SAVE: str):
     """Plot MSE vs mediator-confounding strength with mean ± 95% CI error bars."""
+    _require_matplotlib()
     x = tab["confound_strength"].values
     plt.figure()
     plt.errorbar(x, tab["Naive_mean"], yerr=tab["Naive_hw"], marker='o', linewidth=2.5, capsize=4,
@@ -1092,6 +1109,7 @@ def run_from_args(args):
             pickle.dump(bundle, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     if plots_enabled:
+        _require_matplotlib()
         progress.log(f"Rendering plots to {args.fig_dir}")
         os.makedirs(args.fig_dir, exist_ok=True)
         plot_rmse_vs_n_with_ci(tab_n0, "no_noise", args.fig_dir, args.version_save)
