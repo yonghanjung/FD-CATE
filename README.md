@@ -63,10 +63,28 @@ Standard artifacts under `out/`:
 fdcate benchmark --n 120 --d 6 --seed 2026 --nuisance-learner xgb --out results/benchmark_quick.json
 ```
 
+Multi-seed profile (recommended for robust comparisons):
+
+```bash
+fdcate benchmark \
+  --profile multiseed \
+  --n 120 --d 6 --seed 2026 --n-seeds 20 \
+  --nuisance-learner xgb \
+  --fd-r-g-solver direct \
+  --fd-r-b-learner xgb \
+  --out results/benchmark_multiseed.json
+```
+
 Output schema (`fdcate.benchmark`, `schema_version=0`) contains:
 - `clean` RMSE for `fd-pi`, `fd-dr`, `fd-r`
 - `weak-overlap` RMSE for `fd-pi`, `fd-dr`, `fd-r`
 - `aggregate_mean_rmse` across the two scenarios
+- with `--profile multiseed`: `per_seed` results + summary statistics (`mean/std/min/max`)
+
+FD-R benchmarking knobs:
+- `--fd-r-g-solver`: `direct` or `ratio`
+- `--fd-r-b-learner`: `xgb` or `nn`
+- `--no-fd-r-swap-average`: disable swapped D1/D2 averaging
 
 CI also runs a golden snapshot regression test:
 - `tests/test_benchmark_golden.py`
@@ -131,6 +149,12 @@ Reference source:
 Quick benchmark RMSE plot:
 
 ![FD-CATE quick benchmark RMSE](benchmark_quick_rmse.svg)
+
+Final benchmark figures (FD-R full-noise setting):
+
+![FD-CATE n-sweep at rho=2, d=30 (FD-R full-noise)](fdcate_nsweep_rho2_d30_fullnoise_plot.png)
+
+![FD-CATE rho-sweep at n=2000, d=30 (FD-R full-noise)](fdcate_rhosweep_n2000_d30_fullnoise_plot.png)
 
 ## Model Compatibility Policy (`model.pkl`)
 
