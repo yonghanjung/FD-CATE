@@ -129,27 +129,6 @@ Saved effects to: /tmp/fdcate_live_demo/effects_from_model.csv
 Saved benchmark report to: /tmp/fdcate_live_demo/benchmark_quick.json
 ```
 
-## Experiment Results Snapshot (Quick Benchmark, XGB)
-
-Configuration:
-- `n=60`, `d=4`, `seed=17`, `learner=xgb`
-- scenarios: `clean`, `weak-overlap`
-
-RMSE snapshot:
-
-| Scenario | FD-PI | FD-DR | FD-R |
-|---|---:|---:|---:|
-| clean | 0.3344 | 0.3302 | 0.7864 |
-| weak-overlap | 0.2490 | 0.5096 | 0.8794 |
-| aggregate mean | 0.2917 | 0.4199 | 0.8329 |
-
-Reference source:
-- `tests/benchmark_quick_reference.json`
-
-Quick benchmark RMSE plot:
-
-![FD-CATE quick benchmark RMSE](benchmark_quick_rmse.svg)
-
 Final benchmark figures (FD-R full-noise setting):
 
 ![FD-CATE n-sweep at rho=2, d=30 (FD-R full-noise)](fdcate_nsweep_rho2_d30_fullnoise_plot.png)
