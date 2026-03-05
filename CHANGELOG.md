@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+- Remove Korean wording from Quickstart heading for package-index rendering consistency.
+- Fix benchmark figure links to absolute GitHub raw URLs so images render on package index pages.
+
 ## 0.1.0
 - Add `fd_cate` standard-library package scaffold.
 - Add sklearn-style `FDCATE` estimator wrapper (`fit/effect/summary`).
