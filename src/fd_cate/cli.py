@@ -12,10 +12,17 @@ import numpy as np
 import pandas as pd
 
 from .artifacts import write_artifacts
-from .benchmark import run_quick_benchmark, save_benchmark_report
+from .benchmark import run_multiseed_benchmark, run_quick_benchmark, save_benchmark_report
 from .diagnostics import compute_diagnostics
+from .demo import run_demo
 from .estimator import FDCATE
 from .io import from_dataframe
+
+
+DEMO_DEFAULTS_HINT = (
+    "Defaults: n=120, d=6, seed=2026, method=fd-dr, "
+    "nuisance-learner=xgb, run-benchmark=true."
+)
 
 
 def _sha256_of_file(path: Path) -> str:
@@ -30,6 +37,17 @@ def _parse_covariates(arg: str | None) -> list[str] | None:
     if arg is None or not arg.strip():
         return None
     return [x.strip() for x in arg.split(",") if x.strip()]
+
+
+def _parse_bool_arg(value: str) -> bool:
+    text = str(value).strip().lower()
+    if text in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(
+        f"Invalid boolean value: {value!r}. Use true/false."
+    )
 
 
 def cmd_fit(args: argparse.Namespace) -> int:
@@ -47,6 +65,9 @@ def cmd_fit(args: argparse.Namespace) -> int:
     est = FDCATE(
         method=args.method,
         nuisance_learner=args.nuisance_learner,
+        fd_r_b_learner=args.fd_r_b_learner,
+        fd_r_g_solver=args.fd_r_g_solver,
+        fd_r_swap_average=not args.no_fd_r_swap_average,
         random_state=args.random_state,
         verbose=int(args.verbose),
     )
@@ -135,17 +156,54 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
 
 
 def cmd_benchmark(args: argparse.Namespace) -> int:
-    report = run_quick_benchmark(
-        n=args.n,
-        d=args.d,
-        seed=args.seed,
-        learner=args.nuisance_learner,
-    )
-    print(json.dumps(report["results"], indent=2))
+    common = {
+        "n": args.n,
+        "d": args.d,
+        "seed": args.seed,
+        "learner": args.nuisance_learner,
+        "fd_r_g_solver": args.fd_r_g_solver,
+        "fd_r_swap_average": not args.no_fd_r_swap_average,
+        "fd_r_b_learner": args.fd_r_b_learner,
+    }
+    if args.profile == "multiseed":
+        report = run_multiseed_benchmark(n_seeds=args.n_seeds, **common)
+        print(json.dumps(report["results"]["summary"], indent=2))
+    else:
+        report = run_quick_benchmark(**common)
+        print(json.dumps(report["results"], indent=2))
 
     if args.out:
         out_path = save_benchmark_report(report, args.out)
         print(f"Saved benchmark report to: {out_path}")
+    return 0
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    result = run_demo(
+        outdir=args.outdir,
+        n=args.n,
+        d=args.d,
+        seed=args.seed,
+        method=args.method,
+        nuisance_learner=args.nuisance_learner,
+        run_benchmark=bool(args.run_benchmark),
+        fd_r_b_learner=args.fd_r_b_learner,
+        fd_r_g_solver=args.fd_r_g_solver,
+        fd_r_swap_average=not args.no_fd_r_swap_average,
+    )
+    print(f"[demo] output directory: {result['outdir']}")
+    print(f"[demo] ATE={result['ate']:.6f}")
+    print("[demo] generated files:")
+    print(f" - {result['synthetic']}")
+    for path in result["artifacts"]:
+        print(f" - {path}")
+    if result["benchmark"] is not None:
+        print(f" - {result['benchmark']}")
+    print(
+        "[demo] next: "
+        f"fdcate effect --model {result['fit_out'] / 'model.pkl'} "
+        f"--data {result['synthetic']} --out {result['outdir'] / 'effects_from_model.csv'}"
+    )
     return 0
 
 
@@ -165,6 +223,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fit.add_argument("--method", default="fd-dr", choices=["fd-dr", "fd-r", "fd-pi"])
     p_fit.add_argument("--nuisance-learner", default="xgb", choices=["xgb", "nn"])
+    p_fit.add_argument("--fd-r-b-learner", default="xgb", choices=["xgb", "nn"])
+    p_fit.add_argument("--fd-r-g-solver", default="direct", choices=["direct", "ratio"])
+    p_fit.add_argument(
+        "--no-fd-r-swap-average",
+        action="store_true",
+        help="Disable swapped D1/D2 averaging in FD-R.",
+    )
     p_fit.add_argument("--random-state", type=int, default=0)
     p_fit.add_argument("--verbose", type=int, default=0)
     p_fit.add_argument("--outdir", required=True, help="Output artifact directory")
@@ -203,17 +268,53 @@ def build_parser() -> argparse.ArgumentParser:
     p_syn.add_argument("--out", default="synthetic.csv")
     p_syn.set_defaults(func=cmd_synthetic)
 
-    p_bench = sub.add_parser("benchmark", help="run quick deterministic benchmark")
+    p_bench = sub.add_parser("benchmark", help="run deterministic FD benchmark profiles")
+    p_bench.add_argument("--profile", default="quick", choices=["quick", "multiseed"])
     p_bench.add_argument("--n", type=int, default=120)
     p_bench.add_argument("--d", type=int, default=6)
     p_bench.add_argument("--seed", type=int, default=2026)
+    p_bench.add_argument("--n-seeds", type=int, default=10, help="Used when --profile multiseed.")
     p_bench.add_argument("--nuisance-learner", default="xgb", choices=["xgb", "nn"])
+    p_bench.add_argument("--fd-r-b-learner", default="xgb", choices=["xgb", "nn"])
+    p_bench.add_argument("--fd-r-g-solver", default="direct", choices=["direct", "ratio"])
+    p_bench.add_argument(
+        "--no-fd-r-swap-average",
+        action="store_true",
+        help="Disable swapped D1/D2 averaging in FD-R.",
+    )
     p_bench.add_argument(
         "--out",
         default="results/benchmark_quick.json",
         help="Output path for benchmark JSON report. Set empty string to skip saving.",
     )
     p_bench.set_defaults(func=cmd_benchmark)
+
+    p_demo = sub.add_parser(
+        "demo",
+        help="one-click synthetic + fit + optional benchmark",
+        description="one-click synthetic + fit + optional benchmark",
+        epilog=DEMO_DEFAULTS_HINT,
+    )
+    p_demo.add_argument("--outdir", required=True, help="Output directory for demo artifacts")
+    p_demo.add_argument("--n", type=int, default=120)
+    p_demo.add_argument("--d", type=int, default=6)
+    p_demo.add_argument("--seed", type=int, default=2026)
+    p_demo.add_argument("--method", default="fd-dr", choices=["fd-dr", "fd-r", "fd-pi"])
+    p_demo.add_argument("--nuisance-learner", default="xgb", choices=["xgb", "nn"])
+    p_demo.add_argument("--fd-r-b-learner", default="xgb", choices=["xgb", "nn"])
+    p_demo.add_argument("--fd-r-g-solver", default="direct", choices=["direct", "ratio"])
+    p_demo.add_argument(
+        "--no-fd-r-swap-average",
+        action="store_true",
+        help="Disable swapped D1/D2 averaging in FD-R.",
+    )
+    p_demo.add_argument(
+        "--run-benchmark",
+        type=_parse_bool_arg,
+        default=True,
+        help="Whether to write benchmark_quick.json (true/false). Default: true.",
+    )
+    p_demo.set_defaults(func=cmd_demo)
 
     return parser
 

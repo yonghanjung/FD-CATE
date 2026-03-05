@@ -6,7 +6,7 @@ on:
       - "v*"
 
 jobs:
-  build:
+  build-dist:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +25,49 @@ jobs:
           name: dist
           path: dist/*
 
+  publish-testpypi:
+    needs: build-dist
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: testpypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  install-smoke-testpypi:
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install from TestPyPI and run smoke demo
+        run: |
+          python -m pip install -U pip
+          VERSION="${GITHUB_REF_NAME#v}"
+          for i in 1 2 3 4 5; do
+            python -m pip install \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple \
+              "fd-cate==${VERSION}" && break
+            echo "Waiting for TestPyPI propagation... attempt ${i}/5"
+            sleep 20
+          done
+          fdcate --help
+          fdcate demo --outdir /tmp/fdcate-testpypi-smoke --run-benchmark false --n 40 --d 4 --seed 0
+          test -f /tmp/fdcate-testpypi-smoke/synthetic.csv
+          test -f /tmp/fdcate-testpypi-smoke/fit_out/model.pkl
+          test -f /tmp/fdcate-testpypi-smoke/fit_out/results.json
+
   publish-pypi:
-    needs: build
+    needs: install-smoke-testpypi
     runs-on: ubuntu-latest
     permissions:
       id-token: write

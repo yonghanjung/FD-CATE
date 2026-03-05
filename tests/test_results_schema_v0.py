@@ -6,7 +6,7 @@ from fd_cate import FDCATE
 from fd_cate.artifacts import write_artifacts
 
 
-def test_results_schema_keys(tmp_path):
+def test_results_diagnostics_schema_versions_are_zero(tmp_path):
     data = simulate_fd_data_md(n=50, d=4, seed=9)
     est = FDCATE(method="fd-pi", nuisance_learner="xgb", random_state=9)
     est.fit(data.C, data.Y, t=data.X, m=data.Z)
@@ -28,8 +28,14 @@ def test_results_schema_keys(tmp_path):
     )
 
     payload = json.loads((tmp_path / "results.json").read_text(encoding="utf-8"))
+    diagnostics = json.loads((tmp_path / "diagnostics.json").read_text(encoding="utf-8"))
     assert payload["schema_name"] == "fdcate.results"
     assert payload["schema_version"] == 0
+    assert diagnostics["schema_name"] == "fdcate.diagnostics"
+    assert diagnostics["schema_version"] == 0
     assert "provenance" in payload
     assert "estimator" in payload
     assert "outputs" in payload
+    assert payload["estimator"]["fd_r_b_learner"] == "xgb"
+    assert payload["estimator"]["fd_r_g_solver"] == "direct"
+    assert payload["estimator"]["fd_r_swap_average"] is True

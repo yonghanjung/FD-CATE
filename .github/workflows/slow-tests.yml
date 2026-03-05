@@ -1,0 +1,37 @@
+name: Slow Tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 7 * * *"
+
+jobs:
+  slow:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e .[dev]
+
+      - name: Run slow tests
+        run: |
+          set +e
+          python -m pytest -q -m "slow"
+          code=$?
+          if [ "${code}" -eq 5 ]; then
+            echo "No slow tests collected."
+            exit 0
+          fi
+          exit "${code}"
