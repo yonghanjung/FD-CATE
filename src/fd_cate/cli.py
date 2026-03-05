@@ -19,6 +19,12 @@ from .estimator import FDCATE
 from .io import from_dataframe
 
 
+DEMO_DEFAULTS_HINT = (
+    "Defaults: n=120, d=6, seed=2026, method=fd-dr, "
+    "nuisance-learner=xgb, run-benchmark=true."
+)
+
+
 def _sha256_of_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -283,7 +289,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bench.set_defaults(func=cmd_benchmark)
 
-    p_demo = sub.add_parser("demo", help="one-click synthetic + fit + optional benchmark")
+    p_demo = sub.add_parser(
+        "demo",
+        help="one-click synthetic + fit + optional benchmark",
+        description="one-click synthetic + fit + optional benchmark",
+        epilog=DEMO_DEFAULTS_HINT,
+    )
     p_demo.add_argument("--outdir", required=True, help="Output directory for demo artifacts")
     p_demo.add_argument("--n", type=int, default=120)
     p_demo.add_argument("--d", type=int, default=6)

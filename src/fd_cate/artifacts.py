@@ -96,8 +96,18 @@ def write_artifacts(
     results_path.write_text(json.dumps(results, indent=2, default=_json_default) + "\n", encoding="utf-8")
 
     diagnostics_path = out / "diagnostics.json"
+    diagnostics_payload = {
+        "schema_name": "fdcate.diagnostics",
+        "schema_version": 0,
+        "package_version": __version__,
+        "provenance": {
+            "timestamp": _now_iso_local(),
+            "random_seed": int(estimator.random_state),
+        },
+        "diagnostics": estimator.diagnostics_,
+    }
     diagnostics_path.write_text(
-        json.dumps(estimator.diagnostics_, indent=2, default=_json_default) + "\n",
+        json.dumps(diagnostics_payload, indent=2, default=_json_default) + "\n",
         encoding="utf-8",
     )
 

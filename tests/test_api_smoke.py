@@ -34,9 +34,25 @@ def test_fd_r_config_smoke():
     assert np.all(np.isfinite(tau))
 
 
-def test_model_compatibility_major_minor_guard(tmp_path):
+def test_model_compatibility_same_minor_allowed(tmp_path):
     data = simulate_fd_data_md(n=40, d=4, seed=13)
     est = FDCATE(method="fd-pi", nuisance_learner="xgb", random_state=5)
+    est.fit(data.C, data.Y, t=data.X, m=data.Z)
+
+    model_path = tmp_path / "model.pkl"
+    est.save(model_path)
+
+    payload = joblib.load(model_path)
+    payload["meta"]["package_version"] = "0.1.999"
+    joblib.dump(payload, model_path)
+
+    loaded = FDCATE.load(model_path)
+    assert isinstance(loaded, FDCATE)
+
+
+def test_model_compatibility_minor_mismatch_rejected(tmp_path):
+    data = simulate_fd_data_md(n=40, d=4, seed=14)
+    est = FDCATE(method="fd-pi", nuisance_learner="xgb", random_state=6)
     est.fit(data.C, data.Y, t=data.X, m=data.Z)
 
     model_path = tmp_path / "model.pkl"

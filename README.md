@@ -195,6 +195,20 @@ python -m pytest -q
 python -m build
 ```
 
+Nightly/manual slow tests are separated from PR fast gates:
+
+```bash
+python -m pytest -q -m "slow"
+```
+
+## Release (v0.1.0)
+
+```bash
+bash scripts/release_preflight.sh
+```
+
+Detailed checklist: [`RELEASE_RUNBOOK.md`](RELEASE_RUNBOOK.md)
+
 ## Troubleshooting
 
 1. `fdcate: command not found`
