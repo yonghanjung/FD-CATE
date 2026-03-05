@@ -16,3 +16,4 @@ def test_cli_help_runs():
     )
     assert result.returncode == 0
     assert "fdcate" in result.stdout
+    assert "demo" in result.stdout

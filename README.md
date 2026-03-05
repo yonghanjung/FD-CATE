@@ -8,10 +8,30 @@ This repository keeps the original research scripts (`FDCATE.py`, `analyze_fars_
 
 ```bash
 python -m pip install -U pip
-python -m pip install .
+python -m pip install fd-cate
 ```
 
 Default learner is `xgb` (XGBoost). `nn` is also supported via `nuisance_learner="nn"`.
+
+## One-Click Quickstart (딸깍 1번)
+
+```bash
+fdcate demo --outdir ./fdcate-demo
+```
+
+This single command runs:
+- synthetic data generation
+- model fit + artifact contract write
+- optional quick benchmark (enabled by default)
+
+Expected files:
+- `./fdcate-demo/synthetic.csv`
+- `./fdcate-demo/fit_out/summary.txt`
+- `./fdcate-demo/fit_out/results.json`
+- `./fdcate-demo/fit_out/diagnostics.json`
+- `./fdcate-demo/fit_out/effects.csv`
+- `./fdcate-demo/fit_out/model.pkl`
+- `./fdcate-demo/benchmark_quick.json` (unless `--run-benchmark false`)
 
 ## Quickstart (Python API)
 
@@ -92,7 +112,13 @@ CI also runs a golden snapshot regression test:
 
 ## Live Demo (Toy + Benchmark)
 
-Run the end-to-end live demo (synthetic fit/effect + benchmark):
+Primary path (CLI one-click):
+
+```bash
+fdcate demo --outdir /tmp/fdcate_live_demo
+```
+
+Secondary path (legacy helper script):
 
 ```bash
 bash scripts/run_demo_quick.sh
@@ -114,19 +140,20 @@ fdcate fit --data /tmp/fdcate_live_demo/synthetic.csv --outcome y --treat t --me
 fdcate benchmark --n 60 --d 4 --seed 17 --nuisance-learner xgb --out /tmp/fdcate_live_demo/benchmark_quick.json
 ```
 
-Example terminal output preview:
+Example terminal output preview (`fdcate demo --outdir /tmp/fdcate_live_demo`):
 
 ```text
 [demo] output directory: /tmp/fdcate_live_demo
-[demo] 1) synthetic data
-Saved synthetic dataset to: /tmp/fdcate_live_demo/synthetic.csv
-[demo] 2) fit model + artifact contract
-ATE=0.540874
-Saved artifacts to: /tmp/fdcate_live_demo/fit_out
-[demo] 3) effects from saved model
-Saved effects to: /tmp/fdcate_live_demo/effects_from_model.csv
-[demo] 4) quick benchmark
-Saved benchmark report to: /tmp/fdcate_live_demo/benchmark_quick.json
+[demo] ATE=0.540874
+[demo] generated files:
+ - /tmp/fdcate_live_demo/synthetic.csv
+ - /tmp/fdcate_live_demo/fit_out/summary.txt
+ - /tmp/fdcate_live_demo/fit_out/results.json
+ - /tmp/fdcate_live_demo/fit_out/diagnostics.json
+ - /tmp/fdcate_live_demo/fit_out/effects.csv
+ - /tmp/fdcate_live_demo/fit_out/model.pkl
+ - /tmp/fdcate_live_demo/benchmark_quick.json
+[demo] next: fdcate effect --model /tmp/fdcate_live_demo/fit_out/model.pkl --data /tmp/fdcate_live_demo/synthetic.csv --out /tmp/fdcate_live_demo/effects_from_model.csv
 ```
 
 Final benchmark figures (FD-R full-noise setting):
@@ -167,3 +194,18 @@ python -m pip install -e .[dev]
 python -m pytest -q
 python -m build
 ```
+
+## Troubleshooting
+
+1. `fdcate: command not found`
+- Re-open your shell after installation, or run with module form:
+  - `python -m fd_cate --help`
+
+2. XGBoost import/runtime issue
+- Reinstall in a clean environment:
+  - `python -m pip install -U pip`
+  - `python -m pip install --force-reinstall fd-cate`
+
+3. Permission or write-path errors
+- Use a writable output directory explicitly:
+  - `fdcate demo --outdir /tmp/fdcate-demo`

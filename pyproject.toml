@@ -52,3 +52,6 @@ include = ["fd_cate", "fd_cate.*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "slow: long-running integration or simulation tests excluded from PR CI",
+]

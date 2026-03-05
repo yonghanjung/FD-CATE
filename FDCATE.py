@@ -506,7 +506,8 @@ def _ridge_solve(Xmat: np.ndarray, y: np.ndarray, alpha: float=1e-6) -> np.ndarr
 
 def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int,
                                g_solver: str="direct", swap_average: bool=True,
-                               nuisance_learner: str = "xgb") -> np.ndarray:
+                               nuisance_learner: str = "xgb",
+                               b_learner: str = "xgb") -> np.ndarray:
     """
     FD-R with 3-way cross-fitting and ζ-regression (Eq. 35).
     - Splits data into (D1,D2,D3).
@@ -514,7 +515,12 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int,
       construct ζ on D3 and regress ζ ~ C to estimate γ(C). Return τ̂(C) = b̂(C)·γ̂(C).
     - If swap_average=True, swap D1 and D2 and average the two predictions on each D3 fold.
     - nuisance_learner selects the nuisance model class ('xgb' or 'nn').
+    - b_learner selects the regressor family for b(C) stage ('xgb' or 'nn').
     """
+    if g_solver not in {"direct", "ratio"}:
+        raise ValueError("g_solver must be one of {'direct','ratio'}")
+    b_learner_id = _normalize_learner(b_learner)
+
     bound_y_low, bound_y_high = bounds_y if bounds_y is not None else (float('-inf'), float('inf'))
     bound_z_low, bound_z_high = bounds_z if bounds_z is not None else (float('-inf'), float('inf'))
     
@@ -545,10 +551,13 @@ def tau_fd_r_3way_oof_smoothed(C,X,Z,Y,delta,bounds_y,bounds_z, seed: int,
             rZ = (z2 - nuis.mZ.predict(c2)).astype(float)
             rX = (x2 - cache2['e1']).astype(float)
             mask_b = np.abs(rX) >= 1e-3
-            # Use XGB for b to keep base behavior
-            b_model = new_xgb_regressor(_seed_plus(seed, 111 + k_label))
+            b_model = _regressor_factory(b_learner_id, _seed_plus(seed, 111 + k_label))
             if np.any(mask_b):
-                b_model.fit(c2[mask_b], (rZ[mask_b]/rX[mask_b]), sample_weight=(rX[mask_b]**2))
+                y_b = (rZ[mask_b] / rX[mask_b])
+                if b_learner_id == "xgb":
+                    b_model.fit(c2[mask_b], y_b, sample_weight=(rX[mask_b]**2))
+                else:
+                    b_model.fit(c2[mask_b], y_b)
             else:
                 b_model.fit(c2, np.zeros_like(x2, dtype=float))
             # g-stage

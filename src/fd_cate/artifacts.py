@@ -56,6 +56,9 @@ def build_results_json(
         "estimator": {
             "method": estimator.method,
             "nuisance_learner": estimator.nuisance_learner,
+            "fd_r_b_learner": getattr(estimator, "fd_r_b_learner", "xgb"),
+            "fd_r_g_solver": getattr(estimator, "fd_r_g_solver", "direct"),
+            "fd_r_swap_average": bool(getattr(estimator, "fd_r_swap_average", True)),
             "cv": estimator.cv,
         },
         "outputs": {

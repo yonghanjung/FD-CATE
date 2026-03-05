@@ -38,6 +38,9 @@ class FDCATE(BaseEstimator):
         *,
         method: str = "fd-dr",
         nuisance_learner: str = "xgb",
+        fd_r_b_learner: str = "xgb",
+        fd_r_g_solver: str = "direct",
+        fd_r_swap_average: bool = True,
         cv: str = "auto",
         random_state: int = 0,
         n_jobs: int = -1,
@@ -47,6 +50,9 @@ class FDCATE(BaseEstimator):
     ) -> None:
         self.method = method
         self.nuisance_learner = nuisance_learner
+        self.fd_r_b_learner = fd_r_b_learner
+        self.fd_r_g_solver = fd_r_g_solver
+        self.fd_r_swap_average = fd_r_swap_average
         self.cv = cv
         self.random_state = random_state
         self.n_jobs = n_jobs
@@ -59,6 +65,12 @@ class FDCATE(BaseEstimator):
             raise ValueError("method must be one of {'fd-dr','fd-r','fd-pi'}")
         if self.nuisance_learner not in {"xgb", "nn"}:
             raise ValueError("nuisance_learner must be one of {'xgb','nn'}")
+        if self.fd_r_b_learner not in {"xgb", "nn"}:
+            raise ValueError("fd_r_b_learner must be one of {'xgb','nn'}")
+        if self.fd_r_g_solver not in {"direct", "ratio"}:
+            raise ValueError("fd_r_g_solver must be one of {'direct','ratio'}")
+        if not isinstance(self.fd_r_swap_average, bool):
+            raise ValueError("fd_r_swap_average must be a bool.")
         if self.inference not in {"none", "bootstrap"}:
             raise ValueError("inference must be 'none' or 'bootstrap'")
 
@@ -99,7 +111,10 @@ class FDCATE(BaseEstimator):
                 bounds_y,
                 bounds_z,
                 self.random_state,
+                g_solver=self.fd_r_g_solver,
+                swap_average=self.fd_r_swap_average,
                 nuisance_learner=self.nuisance_learner,
+                b_learner=self.fd_r_b_learner,
             )
 
         tau_train = np.asarray(tau_train, dtype=float)
@@ -145,6 +160,8 @@ class FDCATE(BaseEstimator):
         return (
             "FD-CATE Summary\n"
             f"method={self.method}, nuisance_learner={self.nuisance_learner}, cv={self.cv}\n"
+            f"fd_r_config=(b_learner={self.fd_r_b_learner}, g_solver={self.fd_r_g_solver}, "
+            f"swap_average={self.fd_r_swap_average})\n"
             f"ate={self.ate_:.6f}\n"
             f"overlap_extreme_rates: p_t={overlap['p_t_extreme_rate']:.4f}, p_m={overlap['p_m_extreme_rate']:.4f}\n"
             f"first_stage: E[M|T=1]-E[M|T=0]={first_stage:.6f}\n"

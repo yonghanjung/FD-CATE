@@ -33,3 +33,6 @@ def test_results_schema_keys(tmp_path):
     assert "provenance" in payload
     assert "estimator" in payload
     assert "outputs" in payload
+    assert payload["estimator"]["fd_r_b_learner"] == "xgb"
+    assert payload["estimator"]["fd_r_g_solver"] == "direct"
+    assert payload["estimator"]["fd_r_swap_average"] is True

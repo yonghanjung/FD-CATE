@@ -4,11 +4,14 @@
 - Add `fd_cate` standard-library package scaffold.
 - Add sklearn-style `FDCATE` estimator wrapper (`fit/effect/summary`).
 - Add `fdcate` CLI (`fit/effect/doctor/synthetic`).
+- Add one-click `fdcate demo` command (synthetic -> fit artifacts -> optional benchmark).
 - Add `fdcate benchmark` CLI for deterministic quick FD benchmark runs.
+- Add multiseed benchmark profile (`--profile multiseed`) with summary stats.
+- Expose FD-R benchmark/fit controls (`fd_r_b_learner`, `fd_r_g_solver`, `fd_r_swap_average`).
 - Add artifact contract writers (`summary.txt`, `results.json`, `diagnostics.json`, `effects.csv`).
 - Add model save/load compatibility policy (same major.minor).
 - Add benchmark golden regression test (`tests/test_benchmark_golden.py`).
+- Add benchmark profile contract tests (`tests/test_benchmark_profiles.py`).
 - Add benchmark golden reference artifact (`tests/benchmark_quick_reference.json`).
 - Add live demo helper script (`scripts/run_demo_quick.sh`) and README results snapshot table.
-- Add SVG benchmark plot (`benchmark_quick_rmse.svg`) and README live-demo output preview.
 - Add test suite and GitHub Actions CI/release workflows.
