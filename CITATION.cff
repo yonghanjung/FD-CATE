@@ -1,8 +1,17 @@
 cff-version: 1.2.0
 title: "FD-CATE"
-message: "If you use this software, please cite the associated paper and repository."
+message: "If you use this software, please cite the repository and the associated paper."
 authors:
   - family-names: Jung
     given-names: Yonghan
-version: 0.1.0
+version: 0.1.1
 url: "https://github.com/yonghanjung/FD-CATE"
+repository-code: "https://github.com/yonghanjung/FD-CATE"
+preferred-citation:
+  type: article
+  title: "Debiased Front-Door Learners for Heterogeneous Effects"
+  authors:
+    - family-names: Jung
+      given-names: Yonghan
+  year: 2025
+  url: "https://arxiv.org/abs/2509.22531"

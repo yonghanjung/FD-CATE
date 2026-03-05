@@ -1,71 +1,115 @@
-# FD-CATE
+# FD-CATE: Personalized Causal Inference Under Unmeasured Confounding
 
-Front-door CATE/ATE estimation toolkit with paper-parity defaults for debiased front-door learners.
+[Paper](https://arxiv.org/abs/2509.22531) | [PyPI](https://pypi.org/project/fd-cate/) | [Citation](CITATION.cff) | [Quickstart](#one-command-quickstart) | [Reproduce paper](#reproduce-paper)
 
-This repository keeps the original research scripts (`FDCATE.py`, `analyze_fars_2000_fd.py`) and adds a standard-library interface (`fd_cate`) with a stable artifact contract.
+Estimate heterogeneous treatment effects even when treatment and outcome share hidden confounders, by leveraging front-door identification through an observed mediator.
 
-## Install
+Front-door identification uses an observed mediator on the path from cause to outcome to recover causal effects when hidden confounding makes ordinary adjustment unreliable. This paper extends that idea to personalized causal inference, introducing FD-DR and FD-R for heterogeneous effects.
 
+![FD-CATE n-sweep at rho=2, d=30 (FD-R full-noise)](fdcate_nsweep_rho2_d30_fullnoise_plot.png)
+
+![FD-CATE rho-sweep at n=2000, d=30 (FD-R full-noise)](fdcate_rhosweep_n2000_d30_fullnoise_plot.png)
+
+## Why it matters
+- Hidden confounding usually breaks individualized causal inference.
+- Front-door structure can restore identification when an observed mediator is available.
+- FD-DR and FD-R remain more accurate than FD-PI even when nuisance noise and hidden-variable effects are strong.
+
+### Who is this for?
+- Researchers studying heterogeneous treatment effects beyond standard back-door assumptions.
+- Practitioners with an observed mediator but no credible no-unmeasured-confounding story.
+- Readers who want a runnable method showcase, not only a paper supplement.
+
+## One-command quickstart
 ```bash
-python -m pip install -U pip
 python -m pip install fd-cate
-```
-
-Default learner is `xgb` (XGBoost). `nn` is also supported via `nuisance_learner="nn"`.
-
-## One-Click Quickstart
-
-```bash
 fdcate demo --outdir ./fdcate-demo
 ```
 
-This single command runs:
-- synthetic data generation
-- model fit + artifact contract write
-- optional quick benchmark (enabled by default)
+Outputs:
+- `synthetic.csv`
+- `results.json`
+- `diagnostics.json`
+- `effects.csv`
 
-Expected files:
-- `./fdcate-demo/synthetic.csv`
-- `./fdcate-demo/fit_out/summary.txt`
-- `./fdcate-demo/fit_out/results.json`
-- `./fdcate-demo/fit_out/diagnostics.json`
-- `./fdcate-demo/fit_out/effects.csv`
-- `./fdcate-demo/fit_out/model.pkl`
-- `./fdcate-demo/benchmark_quick.json` (unless `--run-benchmark false`)
+## What you get
+- Debiased front-door learners: `FD-DR` and `FD-R`
+- Plug-in baseline: `FD-PI`
+- One-command demo plus CLI and Python API
+- Synthetic robustness benchmarks and a FARS case study
+- Reproducible artifacts for effects, diagnostics, and benchmark summaries
 
-## Quickstart (Python API)
+## Main figure
+The synthetic benchmarks visualize the core message of the paper: when hidden-variable influence and nuisance noise get stronger, the debiased learners stay substantially more accurate than the plug-in estimator. That is the point of this repository: not just that front-door identification is possible, but that personalized front-door estimation can be made robust and runnable.
 
+## Reproduce paper
+Paper: [Debiased Front-Door Learners for Heterogeneous Effects](https://arxiv.org/abs/2509.22531)
+
+Run the installable demo:
+
+```bash
+fdcate demo --outdir /tmp/fdcate-demo
+```
+
+Run the benchmark profile used for regression and smoke validation:
+
+```bash
+fdcate benchmark --profile multiseed --n 120 --d 6 --seed 2026 --n-seeds 20 --nuisance-learner xgb --out /tmp/fdcate-benchmark.json
+```
+
+Run the original paper-oriented scripts:
+
+```bash
+python FDCATE.py --help
+python analyze_fars_2000_fd.py --help
+```
+
+The repository preserves both paths:
+- `fdcate ...` for package-style usage
+- `FDCATE.py` and `analyze_fars_2000_fd.py` for legacy paper reproduction
+
+## Citation
+Software citation metadata is in [CITATION.cff](CITATION.cff).
+
+```bibtex
+@article{jung2025fdcate,
+  title   = {Debiased Front-Door Learners for Heterogeneous Effects},
+  author  = {Jung, Yonghan},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2509.22531}
+}
+```
+
+## Links
+- Paper: <https://arxiv.org/abs/2509.22531>
+- PyPI: <https://pypi.org/project/fd-cate/>
+- Repository: <https://github.com/yonghanjung/FD-CATE>
+- Release checklist: [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md)
+
+## Python API
 ```python
 from fd_cate import FDCATE
 from FDCATE import simulate_fd_data_md
 
-# synthetic example
-D = simulate_fd_data_md(n=500, d=10, seed=0)
-
+data = simulate_fd_data_md(n=500, d=10, seed=0)
 est = FDCATE(method="fd-dr", nuisance_learner="xgb", random_state=0)
-est.fit(D.C, D.Y, t=D.X, m=D.Z)
+est.fit(data.C, data.Y, t=data.X, m=data.Z)
 
-tau = est.effect(D.C)
+tau = est.effect(data.C)
 print(est.ate_)
 print(est.summary())
 ```
 
-## Quickstart (CLI)
-
+## CLI reference
 ```bash
-# generate synthetic csv
+# Generate a synthetic CSV
 fdcate synthetic --n 300 --d 8 --seed 42 --out synthetic.csv
 
-# fit + write standard artifacts
-fdcate fit \
-  --data synthetic.csv \
-  --outcome y --treat t --med m \
-  --outdir out/
+# Fit and write standard artifacts
+fdcate fit --data synthetic.csv --outcome y --treat t --med m --outdir out/
 
-# diagnostics only
-fdcate doctor \
-  --data synthetic.csv \
-  --outcome y --treat t --med m
+# Run diagnostics only
+fdcate doctor --data synthetic.csv --outcome y --treat t --med m
 ```
 
 Standard artifacts under `out/`:
@@ -75,56 +119,21 @@ Standard artifacts under `out/`:
 - `effects.csv`
 - `model.pkl`
 
-## Benchmark (Quick Profile + Golden Regression)
-
-`fd-cate` now includes a deterministic quick benchmark profile for regression checks.
-
-```bash
-fdcate benchmark --n 120 --d 6 --seed 2026 --nuisance-learner xgb --out results/benchmark_quick.json
-```
-
-Multi-seed profile (recommended for robust comparisons):
-
-```bash
-fdcate benchmark \
-  --profile multiseed \
-  --n 120 --d 6 --seed 2026 --n-seeds 20 \
-  --nuisance-learner xgb \
-  --fd-r-g-solver direct \
-  --fd-r-b-learner xgb \
-  --out results/benchmark_multiseed.json
-```
-
-Output schema (`fdcate.benchmark`, `schema_version=0`) contains:
-- `clean` RMSE for `fd-pi`, `fd-dr`, `fd-r`
-- `weak-overlap` RMSE for `fd-pi`, `fd-dr`, `fd-r`
-- `aggregate_mean_rmse` across the two scenarios
-- with `--profile multiseed`: `per_seed` results + summary statistics (`mean/std/min/max`)
-
-FD-R benchmarking knobs:
-- `--fd-r-g-solver`: `direct` or `ratio`
-- `--fd-r-b-learner`: `xgb` or `nn`
-- `--no-fd-r-swap-average`: disable swapped D1/D2 averaging
-
-CI also runs a golden snapshot regression test:
-- `tests/test_benchmark_golden.py`
-- golden reference file: `tests/benchmark_quick_reference.json`
-
-## Live Demo (Toy + Benchmark)
-
-Primary path (CLI one-click):
+## Live demo
+Primary path:
 
 ```bash
 fdcate demo --outdir /tmp/fdcate_live_demo
 ```
 
-Secondary path (legacy helper script):
+Legacy helper script:
 
 ```bash
 bash scripts/run_demo_quick.sh
 ```
 
-The demo writes:
+Expected demo artifacts:
+- `/tmp/fdcate_live_demo/synthetic.csv`
 - `/tmp/fdcate_live_demo/fit_out/summary.txt`
 - `/tmp/fdcate_live_demo/fit_out/results.json`
 - `/tmp/fdcate_live_demo/fit_out/diagnostics.json`
@@ -132,94 +141,31 @@ The demo writes:
 - `/tmp/fdcate_live_demo/fit_out/model.pkl`
 - `/tmp/fdcate_live_demo/benchmark_quick.json`
 
-Manual one-liners:
-
-```bash
-fdcate synthetic --n 120 --d 6 --seed 2026 --out /tmp/fdcate_live_demo/synthetic.csv
-fdcate fit --data /tmp/fdcate_live_demo/synthetic.csv --outcome y --treat t --med m --method fd-dr --nuisance-learner xgb --outdir /tmp/fdcate_live_demo/fit_out
-fdcate benchmark --n 60 --d 4 --seed 17 --nuisance-learner xgb --out /tmp/fdcate_live_demo/benchmark_quick.json
-```
-
-Example terminal output preview (`fdcate demo --outdir /tmp/fdcate_live_demo`):
-
-```text
-[demo] output directory: /tmp/fdcate_live_demo
-[demo] ATE=0.540874
-[demo] generated files:
- - /tmp/fdcate_live_demo/synthetic.csv
- - /tmp/fdcate_live_demo/fit_out/summary.txt
- - /tmp/fdcate_live_demo/fit_out/results.json
- - /tmp/fdcate_live_demo/fit_out/diagnostics.json
- - /tmp/fdcate_live_demo/fit_out/effects.csv
- - /tmp/fdcate_live_demo/fit_out/model.pkl
- - /tmp/fdcate_live_demo/benchmark_quick.json
-[demo] next: fdcate effect --model /tmp/fdcate_live_demo/fit_out/model.pkl --data /tmp/fdcate_live_demo/synthetic.csv --out /tmp/fdcate_live_demo/effects_from_model.csv
-```
-
-Final benchmark figures (FD-R full-noise setting):
-
-![FD-CATE n-sweep at rho=2, d=30 (FD-R full-noise)](https://raw.githubusercontent.com/yonghanjung/FD-CATE/main/fdcate_nsweep_rho2_d30_fullnoise_plot.png)
-
-![FD-CATE rho-sweep at n=2000, d=30 (FD-R full-noise)](https://raw.githubusercontent.com/yonghanjung/FD-CATE/main/fdcate_rhosweep_n2000_d30_fullnoise_plot.png)
-
-## Model Compatibility Policy (`model.pkl`)
-
-`model.pkl` loading is allowed only when **major.minor** package versions match.
-
-- Example: model saved with `0.1.x` can be loaded by `0.1.y`.
-- Example: model saved with `0.1.x` cannot be loaded by `0.2.x`.
-
-## Scope (v0.1)
-
+## Scope
 Supported:
-- binary treatment `T ∈ {0,1}`
-- binary mediator `M ∈ {0,1}`
+- binary treatment `T in {0,1}`
+- binary mediator `M in {0,1}`
 - numeric covariates
-- continuous or binary outcome (regression handling)
+- continuous or binary outcome
 
 Not supported:
-- non-binary `T`/`M`
+- non-binary `T` or `M`
 - automatic categorical encoding pipelines
 
-## Legacy Reproduction Scripts
-
-The original paper-focused scripts are preserved:
-- `python FDCATE.py --help`
-- `python analyze_fars_2000_fd.py --help`
-
 ## Development
-
 ```bash
 python -m pip install -e .[dev]
 python -m pytest -q
 python -m build
 ```
 
-Nightly/manual slow tests are separated from PR fast gates:
+Slow tests:
 
 ```bash
 python -m pytest -q -m "slow"
 ```
 
-## Release (v0.1.0)
-
-```bash
-bash scripts/release_preflight.sh
-```
-
-Detailed checklist: [`RELEASE_RUNBOOK.md`](RELEASE_RUNBOOK.md)
-
 ## Troubleshooting
-
-1. `fdcate: command not found`
-- Re-open your shell after installation, or run with module form:
-  - `python -m fd_cate --help`
-
-2. XGBoost import/runtime issue
-- Reinstall in a clean environment:
-  - `python -m pip install -U pip`
-  - `python -m pip install --force-reinstall fd-cate`
-
-3. Permission or write-path errors
-- Use a writable output directory explicitly:
-  - `fdcate demo --outdir /tmp/fdcate-demo`
+1. If `fdcate` is not found, reopen the shell or use `python -m fd_cate --help`.
+2. If XGBoost has import issues, reinstall in a clean environment with `python -m pip install --force-reinstall fd-cate`.
+3. If writes fail, point `--outdir` to a writable location such as `/tmp/fdcate-demo`.

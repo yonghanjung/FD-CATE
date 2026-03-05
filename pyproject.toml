@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fd-cate"
 version = "0.1.1"
-description = "Front-door CATE/ATE estimation toolkit with debiased learners."
+description = "Debiased front-door learners for heterogeneous treatment effects under unmeasured confounding."
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [
