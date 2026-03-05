@@ -13,7 +13,7 @@ python -m pip install fd-cate
 
 Default learner is `xgb` (XGBoost). `nn` is also supported via `nuisance_learner="nn"`.
 
-## One-Click Quickstart (딸깍 1번)
+## One-Click Quickstart
 
 ```bash
 fdcate demo --outdir ./fdcate-demo
@@ -158,9 +158,9 @@ Example terminal output preview (`fdcate demo --outdir /tmp/fdcate_live_demo`):
 
 Final benchmark figures (FD-R full-noise setting):
 
-![FD-CATE n-sweep at rho=2, d=30 (FD-R full-noise)](fdcate_nsweep_rho2_d30_fullnoise_plot.png)
+![FD-CATE n-sweep at rho=2, d=30 (FD-R full-noise)](https://raw.githubusercontent.com/yonghanjung/FD-CATE/main/fdcate_nsweep_rho2_d30_fullnoise_plot.png)
 
-![FD-CATE rho-sweep at n=2000, d=30 (FD-R full-noise)](fdcate_rhosweep_n2000_d30_fullnoise_plot.png)
+![FD-CATE rho-sweep at n=2000, d=30 (FD-R full-noise)](https://raw.githubusercontent.com/yonghanjung/FD-CATE/main/fdcate_rhosweep_n2000_d30_fullnoise_plot.png)
 
 ## Model Compatibility Policy (`model.pkl`)
 
