@@ -58,3 +58,22 @@ jobs:
           test -f /tmp/fdcate-ci/demo/fit_out/results.json
           test -f /tmp/fdcate-ci/demo/fit_out/diagnostics.json
           test -f /tmp/fdcate-ci/demo/fit_out/effects.csv
+
+  space-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package and Space dependencies
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e .[dev]
+          python -m pip install -r scripts/hf_space_requirements.txt
+
+      - name: Run HF Space contract tests
+        run: python -m pytest -q tests/test_hf_space_contract.py

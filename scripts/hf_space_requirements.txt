@@ -1,0 +1,4 @@
+gradio==5.50.0
+fd-cate==0.1.1
+pandas
+matplotlib
