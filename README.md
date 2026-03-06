@@ -1,6 +1,6 @@
 # FD-CATE: Personalized Causal Inference Under Unmeasured Confounding
 
-[Paper](https://arxiv.org/abs/2509.22531) | [PyPI](https://pypi.org/project/fd-cate/) | [Citation](CITATION.cff) | [Quickstart](#one-command-quickstart) | [Reproduce paper](#reproduce-paper)
+[Paper](https://arxiv.org/abs/2509.22531) | [GitHub](https://github.com/yonghanjung/FD-CATE) | [HF Demo](https://huggingface.co/spaces/yonghanjung/fdcate-demo) | [PyPI](https://pypi.org/project/fd-cate/) | [Citation](CITATION.cff) | [Quickstart](#one-command-quickstart) | [Reproduce paper](#reproduce-paper)
 
 Estimate heterogeneous treatment effects even when treatment and outcome share hidden confounders, by leveraging front-door identification through an observed mediator.
 
@@ -84,6 +84,7 @@ Software citation metadata is in [CITATION.cff](CITATION.cff).
 - Paper: <https://arxiv.org/abs/2509.22531>
 - PyPI: <https://pypi.org/project/fd-cate/>
 - Repository: <https://github.com/yonghanjung/FD-CATE>
+- Hugging Face demo: <https://huggingface.co/spaces/yonghanjung/fdcate-demo>
 - Release checklist: [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md)
 
 ## Python API

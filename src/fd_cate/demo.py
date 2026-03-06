@@ -1,10 +1,10 @@
-"""One-click end-to-end demo runner for FD-CATE."""
+"""One-click end-to-end demo runners for FD-CATE."""
 
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 import pandas as pd
 
@@ -22,12 +22,29 @@ def _sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def run_demo(
+def make_canonical_example_dataframe(*, n: int = 120, d: int = 6, seed: int = 2026) -> pd.DataFrame:
+    """Return the canonical synthetic front-door example used in demos."""
+    from FDCATE import simulate_fd_data_md
+
+    data = simulate_fd_data_md(n=n, d=d, seed=seed)
+    cols = {f"x{i}": data.C[:, i] for i in range(data.C.shape[1])}
+    cols["y"] = data.Y
+    cols["t"] = data.X
+    cols["m"] = data.Z
+    return pd.DataFrame(cols)
+
+
+def run_demo_from_dataframe(
     *,
     outdir: str | Path,
-    n: int = 120,
-    d: int = 6,
-    seed: int = 2026,
+    dataframe: pd.DataFrame,
+    outcome: str,
+    treatment: str,
+    mediator: str,
+    covariates: Sequence[str] | None,
+    input_filename: str = "input.csv",
+    command_line: str = "fdcate demo",
+    random_state: int = 2026,
     method: str = "fd-dr",
     nuisance_learner: str = "xgb",
     run_benchmark: bool = True,
@@ -35,31 +52,21 @@ def run_demo(
     fd_r_g_solver: str = "direct",
     fd_r_swap_average: bool = True,
 ) -> Dict[str, Any]:
-    """Run synthetic generation -> fit -> optional benchmark in one command."""
-    from FDCATE import simulate_fd_data_md
-
+    """Fit FD-CATE from a dataframe and emit the standard demo artifacts."""
     outdir_path = Path(outdir)
     outdir_path.mkdir(parents=True, exist_ok=True)
 
-    synthetic_path = outdir_path / "synthetic.csv"
+    input_path = outdir_path / input_filename
     fit_out = outdir_path / "fit_out"
+    dataframe.to_csv(input_path, index=False)
 
-    # 1) synthetic dataset
-    data = simulate_fd_data_md(n=n, d=d, seed=seed)
-    cols = {f"x{i}": data.C[:, i] for i in range(data.C.shape[1])}
-    cols["y"] = data.Y
-    cols["t"] = data.X
-    cols["m"] = data.Z
-    pd.DataFrame(cols).to_csv(synthetic_path, index=False)
-
-    # 2) fit + artifacts
-    df = pd.read_csv(synthetic_path)
+    df = pd.read_csv(input_path)
     X, y, t, m, schema = from_dataframe(
         df,
-        outcome="y",
-        treatment="t",
-        mediator="m",
-        covariates=None,
+        outcome=outcome,
+        treatment=treatment,
+        mediator=mediator,
+        covariates=covariates,
     )
     est = FDCATE(
         method=method,
@@ -67,7 +74,7 @@ def run_demo(
         fd_r_b_learner=fd_r_b_learner,
         fd_r_g_solver=fd_r_g_solver,
         fd_r_swap_average=fd_r_swap_average,
-        random_state=seed,
+        random_state=random_state,
         verbose=0,
     )
     est.fit(X, y, t=t, m=m)
@@ -88,17 +95,17 @@ def run_demo(
             "outcome_type": "continuous_or_binary",
             "schema": schema,
         },
-        command_line="fdcate demo",
-        data_hash=_sha256_of_file(synthetic_path),
+        command_line=command_line,
+        data_hash=_sha256_of_file(input_path),
     )
 
     benchmark_path: Path | None = None
     if run_benchmark:
         benchmark_path = outdir_path / "benchmark_quick.json"
         report = run_quick_benchmark(
-            n=max(60, min(120, n)),
-            d=min(6, d),
-            seed=seed,
+            n=max(60, min(120, int(X.shape[0]))),
+            d=min(6, int(X.shape[1])),
+            seed=int(random_state),
             learner=nuisance_learner,
             fd_r_g_solver=fd_r_g_solver,
             fd_r_swap_average=fd_r_swap_average,
@@ -108,7 +115,7 @@ def run_demo(
 
     return {
         "outdir": outdir_path,
-        "synthetic": synthetic_path,
+        "input_csv": input_path,
         "fit_out": fit_out,
         "ate": float(est.ate_),
         "artifacts": [
@@ -119,5 +126,41 @@ def run_demo(
             fit_out / "model.pkl",
         ],
         "benchmark": benchmark_path,
+        "schema": schema,
     }
 
+
+def run_demo(
+    *,
+    outdir: str | Path,
+    n: int = 120,
+    d: int = 6,
+    seed: int = 2026,
+    method: str = "fd-dr",
+    nuisance_learner: str = "xgb",
+    run_benchmark: bool = True,
+    fd_r_b_learner: str = "xgb",
+    fd_r_g_solver: str = "direct",
+    fd_r_swap_average: bool = True,
+) -> Dict[str, Any]:
+    """Run synthetic generation -> fit -> optional benchmark in one command."""
+    df = make_canonical_example_dataframe(n=n, d=d, seed=seed)
+    result = run_demo_from_dataframe(
+        outdir=outdir,
+        dataframe=df,
+        outcome="y",
+        treatment="t",
+        mediator="m",
+        covariates=[f"x{i}" for i in range(d)],
+        input_filename="synthetic.csv",
+        command_line="fdcate demo",
+        random_state=seed,
+        method=method,
+        nuisance_learner=nuisance_learner,
+        run_benchmark=run_benchmark,
+        fd_r_b_learner=fd_r_b_learner,
+        fd_r_g_solver=fd_r_g_solver,
+        fd_r_swap_average=fd_r_swap_average,
+    )
+    result["synthetic"] = result["input_csv"]
+    return result

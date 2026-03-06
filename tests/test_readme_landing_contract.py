@@ -21,6 +21,8 @@ def test_readme_top_fold_has_launch_contract():
 
     assert "# FD-CATE: Personalized Causal Inference Under Unmeasured Confounding" in readme
     assert "https://arxiv.org/abs/2509.22531" in top
+    assert "https://github.com/yonghanjung/FD-CATE" in top
+    assert "https://huggingface.co/spaces/yonghanjung/fdcate-demo" in top
     assert "python -m pip install fd-cate" in top
     assert "fdcate demo --outdir ./fdcate-demo" in top
     assert "fdcate_nsweep_rho2_d30_fullnoise_plot.png" in top

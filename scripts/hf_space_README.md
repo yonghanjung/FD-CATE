@@ -20,11 +20,14 @@ tags:
 
 Personalized causal inference under unmeasured confounding via front-door identification.
 
+[Paper](https://arxiv.org/abs/2509.22531) | [GitHub](https://github.com/yonghanjung/FD-CATE) | [PyPI](https://pypi.org/project/fd-cate/)
+
 This Space demonstrates the core idea of [Debiased Front-Door Learners for Heterogeneous Effects](https://arxiv.org/abs/2509.22531): when treatment and outcome share hidden confounders but an observed mediator makes front-door identification plausible, we can still estimate heterogeneous treatment effects.
 
 ## What this demo does
 
-- Generates a synthetic front-door dataset
+- Runs the canonical synthetic front-door example
+- Accepts an uploaded CSV with outcome, treatment, mediator, and covariate columns
 - Fits one of `FD-PI`, `FD-DR`, or `FD-R`
 - Visualizes the estimated treatment-effect distribution
 - Optionally runs a compact benchmark summary
@@ -36,6 +39,7 @@ This Space demonstrates the core idea of [Debiased Front-Door Learners for Heter
 - `d = 6`
 - `method = FD-DR`
 - `nuisance learner = xgb`
+- canonical columns = `y`, `t`, `m`, `x0,...,x5` if the covariate box is left blank
 
 ## Links
 
